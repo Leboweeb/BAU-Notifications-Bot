@@ -140,7 +140,7 @@ class BotCommands:
         To see the list of available commands, type c or commands (on their own)
 
 
-        For any help, feature requests, or bug reports please create an issue in the dedicated GitHub repository (link_here)
+        For any help, feature requests, or bug reports please create an issue in the dedicated GitHub repository (https://github.com/Leboweeb/BAU-Notifications-Bot)
         or contact me at mys239@student.bau.edu.lb via outlook
         """)
 
