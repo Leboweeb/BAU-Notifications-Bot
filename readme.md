@@ -2,6 +2,8 @@
 
 ## This bot is hosted on my personal laptop, so don't expect the bot to be available 24/7
 
+You can expect this bot to be available from 3PM-12AM
+
 1- Why would I need this? I can already get notifications from the moodle website.
 
 You wouldn't believe how bloated the university website is. Through special means, I can cache the content gotten from the university website and send it to you ~ 10x faster even in the worst case. Also, this is more than just a fast way to get notifications because this bot automatically reminds you of exams and other notifications that are a week away from their deadlines. That alone is enough to justify using (or even making) this bot.
