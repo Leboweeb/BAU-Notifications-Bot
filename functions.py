@@ -1,18 +1,17 @@
 import asyncio
 import difflib
-from functools import reduce
+from enum import Enum
 import html
 import logging
 import re
-import inspect
 import json
 import httpx
-import os
 import datefinder
 import itertools as it
+from functools import reduce
 from bs4 import BeautifulSoup
 from datetime import datetime
-from typing import AsyncGenerator, Callable, Coroutine, Iterable, List
+from typing import AsyncGenerator,Coroutine, Iterable, List
 from dataclasses import dataclass
 from collections import Counter
 
@@ -26,22 +25,28 @@ class Announcement:
     message: str
     ID: str
     subject = ""
+    subject_code = ""
     subject_type = None
     deadline = None
     links = None
     timedelta = None
 
 
-def notification_message_builder(notification: Announcement):
-    strings = (getattr(notification, attr)
-               for attr in ("subject", "message", "deadline"))
-    prefixes = (i.capitalize() for i in ("subject", "message", "deadline"))
-    return f"""
----------------------------------------
-    {string_builder(strings,prefixes)}
----------------------------------------
+def notification_message_builder(notification: Announcement,custom_message=None):
+        attrs = ("subject", "message", "deadline")
+        strings = [getattr(notification, attr)
+                for attr in attrs]
+        prefixes = (i.capitalize() for i in attrs)
+        strings[0] = f"{notification.subject} ({notification.subject_code})"
+        if custom_message:
+            strings[1] = custom_message
 
-"""
+        return f"""
+    ---------------------------------------
+        {string_builder(strings,prefixes)}
+    ---------------------------------------
+    
+    """
 
 
 class PostponedHandler:
@@ -90,165 +95,6 @@ class PostponedHandler:
         for i in self.postponed_type_notifications:
             self.compare_to_notification(i)
         return self.notifications
-
-
-class Plate:
-
-    def __call__(self):
-        return self.run()
-
-    def __mul__(self, other):
-        if type(other) == int:
-            return [self.run() for i in range(other)]
-        else:
-            raise ValueError(
-                f"Multiplication between plates and {type(other)} is not supported")
-
-    def __rmul__(self, other):
-        if type(other) == int:
-            return [self.run() for i in range(other)]
-        else:
-            raise ValueError(
-                f"Multiplication between plates and {type(other)} is not supported")
-
-    def __init__(self, function: Callable, arguments=None, args_kwargs=True) -> None:
-        self.current_function = function.__name__
-        self.function = function
-        self.arguments = arguments
-        self.cor = inspect.iscoroutinefunction(function)
-        self.unpack = args_kwargs
-
-    def run(self):
-        """
-        All purpose run function which handles special *args and **kwargs syntax
-        """
-        if self.arguments != None:
-            try:
-                if self.unpack:
-                    if type(self.arguments) != dict:
-                        return self.function(*self.arguments) if not self.cor else asyncio.run(self.function(*self.arguments))
-                    return self.function(**self.arguments) if not self.cor else asyncio.run(self.function(**self.arguments))
-                else:
-                    return self.function(self.arguments) if not self.cor else asyncio.run(self.function(self.arguments))
-
-            except TypeError:
-                return self.function(self.arguments) if not self.cor else asyncio.run(self.function(self.arguments))
-        else:
-            return self.function()
-
-
-class FunctionFridge:
-    """
-    An object oriented way to pass arguments to a function or a collection of functions and reuse said functions by "freezing" them .
-
-    Example:
-
-    >>> x = lambda arg : print("arg")
-    >>> def y (*args) : print(*args)
-    >>> fridge = FunctionFridge((x,<your argument(s) here>),(y,(<your argument(s) here>)))
-    # returns a Plate object, not the function. This is to ensure that callbacks are really easy to manage. ( so that you don't have to deal with its arguments)
-    >>> fridge.x
-    >>> Plate object at some memory adress
-    >>> fridge.x.run() # runs the callback function you need
-
-    Alternatively, the get_plate method can get the plate object in case you have long function names.
-
-    This class also handles coroutines as well.
-
-    Also, due to python's garbage collection, this class may fail randomly when dealing with lambda functions, be warned.
-    """
-
-    def __init__(self, *args) -> None:
-        for arg in args:
-            plate_args = pad_iter(arg, (None, True))
-            setattr(self, plate_args[0].__name__, Plate(*plate_args))
-
-    def get_plate(self, func: Callable) -> Plate:
-        try:
-            try:
-                name = func.__name__
-            except AttributeError:
-                name = func
-            return getattr(self, name)
-
-        except AttributeError:
-            raise AttributeError(f"{name} doesn't exist in this fridge!")
-
-
-class LockFile:
-    """
-    A class useful for abstracting interactions with the custom lock file, given said file.
-    Instances of this class represent a lock file in the bot_temp directory
-    """
-    posted_index = 2
-    with open("creds.txt") as f:
-        public_context = f.read().split("\n")[-1]
-
-    @staticmethod
-    def _create_lockfile(announcement: Announcement) -> None:
-        file_handler(f"{current_dir}/bot_temp/{announcement.ID}.lockfile", mode="w",
-                     text=f"Lock announcement {announcement.ID}\nThis file is autogenerated, do not edit it. \n0")
-
-    def __init__(self, announcement: Announcement) -> None:
-        LockFile._create_lockfile(announcement)
-        self.announcement = announcement
-        self.file = f"{current_dir}/bot_temp/{announcement.ID}.lockfile"
-        self.timedelta = announcement.timedelta
-        self.text_arr: list = file_handler(self.file).split("\n")
-        self.sent_before: int = int(
-            self.text_arr[LockFile.posted_index].strip())
-
-    def write_at_line(self, line: int, text: str) -> None:
-        """
-        Overwrites a specific line in a text file, or appends it if it doesn't exist
-        """
-        file = self.file
-        line = abs(line) if line < 0 else line
-        line = [1, line][bool(line)]
-        file_name = file
-        text_arr = file_handler(file).split("\n")
-        os.remove(file)
-        if line > len(text_arr):
-            # pads file with empty lines and writes some text at a specific line
-            file_handler(file_name, "w", "\n".join(
-                list(it.chain(text_arr, [""]*((line - len(text_arr))-1), [text]))))
-        else:
-            text_arr[line-1] = text
-            text_arr = "\n".join(text_arr)
-            file_handler(file_name, mode="w", text=text_arr)
-
-    def check_if_posted(self,  post_to_telegram_hook: Callable):
-        def _manage_strikes():
-            self.sent_before += 1
-            self.write_at_line(LockFile.posted_index +
-                               1, str(self.sent_before))
-            post_to_telegram_hook(
-                LockFile.public_context, notification_message_builder(self.announcement))
-
-        def yeet(): return os.remove(self.file)
-
-        def glob_tuples(tup: tuple, callback, special_callback) -> None:
-            """
-            decision tree:
-            1 < timedelta <= 7 and strikes = 0 -> post announcement and lock it
-
-            what-ifs:
-            - timedelta is 1 and strikes = 0 ? -> post it and delete it
-            - timedelta is 1 and strikes = 1 ? -> post it and delete it
-            - timedelta is 0 and strikes = 0 ? -> delete it
-            - timedelta is negative and strikes = 0 ? -> delete it
-            """
-            func_to_call = None
-            if tup[0] <= 0:
-                special_callback()
-            if 1 <= tup[0] <= 7:
-                if tup[1] == 0 or tup[0] == 1 and 0 <= tup[1] <= 1:
-                    func_to_call = callback
-                    if tup[0] == 1 and 0 <= tup[1] <= 1:
-                        special_callback()
-                return func_to_call
-        glob_tuples((self.timedelta, self.sent_before
-                     ), _manage_strikes, yeet) if self.timedelta else yeet()
 
 
 FORMAT = "%(levelname)s %(asctime)s - %(message)s"
@@ -318,19 +164,18 @@ def insert_into_dict(dictionary, index, pair) -> dict:
     return dictionary
 
 
-def replace_substrings(substr_tuple_iter,text):
-    if hasattr(substr_tuple_iter,"__iter__"):
-        result =  reduce(lambda s, v: s.replace(*v),substr_tuple_iter, text)
+def replace_substrings(substr_tuple_iter, text):
+    if hasattr(substr_tuple_iter, "__iter__"):
+        result = reduce(lambda s, v: s.replace(*v), substr_tuple_iter, text)
         return result
-        
-    
+
 
 def search_case_insensitive(query: str, text: str):
     query = query.lower()
-    found = [(q, f"_{q}_") for q in (
+    found = [(q, f"[{q}]") for q in (
         query, query.capitalize(), query.upper()) if q in text]
     # *v here prevents another loop; semantically equivalent to for item in found: reduce(lambda s,v : s.replace(v), found , text where text is the default in case no results were found )
-    result =  reduce(lambda s, v: s.replace(*v), found, text)
+    result = reduce(lambda s, v: s.replace(*v), found, text)
     if result != text:
         return result
 
@@ -339,27 +184,6 @@ def css_selector(html=None, selector="", value=None):
     soup = BeautifulSoup(html, "lxml").select(selector)
     soup = soup[0][value] if value else soup
     return soup
-
-
-def pad_iter(iterable, items, amount=None) -> tuple:
-    padding = (items,) * amount if amount else items
-
-    def _gen():
-        def not_iterable(thing):
-            res = (it.chain((thing,), padding))
-            res = it.takewhile(lambda item: True, res)
-            for i in res:
-                yield i
-        try:
-            if type(iterable) == str:
-                raise TypeError
-            res = tuple(it.chain.from_iterable((iterable, padding)))
-            for i, j in zip(iterable, res):
-                yield i if i else j
-
-        except TypeError:
-            yield from not_iterable(iterable)
-    return tuple(_gen())
 
 
 def infinite_conditional(*args):
@@ -392,7 +216,7 @@ def clean_list(T: Iterable):
 def limit(iterable, limit=5):
     def _gen():
         if limit != None:
-            for i in it.islice(iterable,0,limit):
+            for i in it.islice(iterable, 0, limit):
                 yield i
 
         else:
@@ -425,11 +249,10 @@ def string_builder(strings: Iterable, prefixes: Iterable, separator: str = "\n")
     Builds a string incrementally until it reaches a breakpoint (a field is missing)
     """
     def built_strings():
-        for string,prefix in zip(strings, prefixes):
+        for string, prefix in zip(strings, prefixes):
             if string and prefix:
                 yield f"{prefix} : {string}"
     return separator.join(filter(None, built_strings()))
-
 
 
 def hilight_word(string: str, query) -> str:
@@ -514,8 +337,9 @@ class InputFilters:
             res = file_handler("courses.json")
             data = json.loads(res)[0]["data"]["courses"]
         data = [i for i in data]
-        mappings = {item["shortname"] : html.unescape(item["fullname"]) for item in data}
-        file_handler("mappings.json","w",json.dumps(mappings,indent=4))
+        mappings = {item["shortname"]: html.unescape(
+            item["fullname"]) for item in data}
+        file_handler("mappings.json", "w", json.dumps(mappings, indent=4))
 
     @staticmethod
     def lockfile_cleanup(res: dict) -> List[Announcement]:
@@ -535,26 +359,6 @@ class InputFilters:
                 return True
         important_objects = list(filter(_important_notification, objects))
         return important_objects
-
-
-def track_notifications(objects: List[Announcement], telegram_hook) -> None:
-    """
-    Should only accept important notifications, see the function above.
-    """
-    if not os.path.exists("bot_temp"):
-        os.mkdir("bot_temp")
-
-    def lockfile_manager(announcements: List[Announcement]) -> None:
-        announcements = list(filter(lambda x: x.subject_type, announcements))
-        files = [LockFile(announcement)
-                 for announcement in announcements]
-        callbacks = clean_list(
-            [file.check_if_posted(telegram_hook) for file in files])
-        if callbacks:
-            telegram_hook(LockFile.public_context,
-                          "**_These notifications are close to their deadlines, so you should probably do something about them_**")
-            gen_exec(callback() for callback in callbacks)
-    lockfile_manager(objects)
 
 
 class AsyncFunctions:
@@ -603,12 +407,12 @@ class AsyncFunctions:
             # I love the union syntax so much, I'm legit crying. WHY WAS IT SO HARD IN PYTHON 2? WHYYYYYY ??
             type_dict = {name: "exam" for name in exam_types} | {
                 name: name for name in non_exam_types}
-            announcement.subject_type = re.findall("|".join(it.chain(
-                non_exam_types, exam_types)), announcement.subject_type.lower(), re.MULTILINE)[0]
             try:
+                announcement.subject_type = re.findall("|".join(it.chain(
+                    non_exam_types, exam_types)), announcement.subject_type.lower(), re.MULTILINE)[0]
                 announcement.subject_type = type_dict[announcement.subject_type]
 
-            except KeyError:
+            except (KeyError,IndexError):
                 announcement.subject_type = None
 
             split = announcement.message.split(
@@ -643,22 +447,19 @@ class AsyncFunctions:
         await AsyncFunctions.collect_tasks(_attr_worker, objects)
         return objects
 
-class HighLevelFunctions:
-    def __init__(self, telegram_hook=None) -> None:
+
+class TelegramInterface:
+    def __init__(self) -> None:
         self.notifications_dict = InputFilters.notifications_wrapper()
         self.notifications = InputFilters.lockfile_cleanup(
             self.notifications_dict)
         self.unfiltered_notifications = run(
             AsyncFunctions.get_data(self.notifications_dict))
-        if telegram_hook:
-            self.update_links_and_meetings()
-            self.remind(telegram_hook)
-
+        
+        self.urgent_notifications_gen = (i for i in self.notifications if i.timedelta and 1 <= i.timedelta <= 7)
+        self.update_links_and_meetings()
 
     def update_links_and_meetings(self):
         notifications = json.dumps(
             {announcement.subject: announcement.links for announcement in run(AsyncFunctions.get_data(self.notifications_dict)) if announcement.links})
         file_handler("links_and_meetings.json", "w", notifications)
-
-    def remind(self, telegram_hook: Callable):
-        track_notifications(self.notifications, telegram_hook)

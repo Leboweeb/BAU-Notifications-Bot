@@ -57,7 +57,8 @@ with requests.Session() as Session:
         'Sec-Fetch-User': "?1",
         'Sec-GPC': "1"
     }
-    courses_querystring = {"service": "https://moodle.bau.edu.lb/login/index.php"}
+    courses_querystring = {
+        "service": "https://moodle.bau.edu.lb/login/index.php"}
     login_headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.7113.93 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/jxl,image/webp,*/*;q=0.8",
@@ -125,16 +126,18 @@ with requests.Session() as Session:
     my_format("Payload json object: ", api_payload)
     api_querystring = {"sesskey": sesskey,
                        "info": "message_popup_get_popup_notifications"}
-    courses_querystring = {"sesskey":sesskey,"info":"core_course_get_enrolled_courses_by_timeline_classification"}
+    courses_querystring = {
+        "sesskey": sesskey, "info": "core_course_get_enrolled_courses_by_timeline_classification"}
     api_response = Session.post(url=SERIVCE_URL,
                                 headers=service_headers,
                                 json=api_payload,
                                 params=api_querystring
                                 )
     result_json = api_response.json()
-    file_handler("results.json","w",text=json.dumps(api_response.json(), indent=4))
+    file_handler("results.json", "w", text=json.dumps(
+        api_response.json(), indent=4))
     courses = Session.post(url=SERIVCE_URL,
-                                headers=service_headers,
-                                json=courses_payload,
-                                params=courses_querystring)
-    file_handler("courses.json","w",json.dumps(courses.json(),indent=4))
+                           headers=service_headers,
+                           json=courses_payload,
+                           params=courses_querystring)
+    file_handler("courses.json", "w", json.dumps(courses.json(), indent=4))
