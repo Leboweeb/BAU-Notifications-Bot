@@ -125,3 +125,4 @@ scratch.py
 bot_temp/
 *.lockfile
 textfile/
+*env*
