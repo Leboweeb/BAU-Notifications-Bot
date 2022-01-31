@@ -29,7 +29,7 @@ If you want to filter notifications by type, call the search function with an ar
 
 meeting_links :
 
-### A convenience function to send the zoom/teams meeting links of every subject in a text file
+A convenience function to send the zoom/teams meeting links of every subject in a text file
 
 ### Aliases : 'r'
 
@@ -41,7 +41,7 @@ Sends notifications that are at most 1 week away from their deadline.
 show_commands :
 Displays every available command and its description.
 
-### Alternatively, type commands or c to show the list of available commands
+Alternatively, type commands or c to show the list of available commands
 
 3 - This feature isn't working, when will you fix it?
 
@@ -49,11 +49,11 @@ I'll try my best to have my code working in the little amount of time that I hav
 
 4 - Do you accept feature requests?
 
-### Absolutely, the more challenging and fun the better. I don't know what more you could do with a bot like this, but if you have any ideas let me know
+Absolutely, the more challenging and fun the better. I don't know what more you could do with a bot like this, but if you have any ideas let me know
 
 5 - How can I contribute?
 
-### All of the code I use is freely available in this repository, make sure to send me a pull request if you feel the need to change anything, see the section below for building and setting up an instance of this bot
+All of the code I use is freely available in this repository, make sure to send me a pull request if you feel the need to change anything, see the section below for building and setting up an instance of this bot
 
 ## Contributing
 
