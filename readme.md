@@ -10,24 +10,24 @@ Here is every command I have implemented so far, aliases are another way to exec
 
 For example, sending h or help to the group chat will execute the help command.
 
-Aliases : ['h']
+Aliases : 'h'
 help :
 Displays relevant help text.
 
-Aliases : ['notifications', 'i']
+Aliases : 'notifications', 'i'
 important_notifications :
 Returns notifications representing exams, quizzes, exam deadlines, labs, etc.. in no particular order.
 If you want to filter notifications by type, call the search function with an argument.
 
-Aliases : ['links', 'l']
+Aliases : 'links', 'l'
 meeting_links :
 A convenience function to send the zoom/teams meeting links of every subject in a text file.
 
-Aliases : ['r']
+Aliases : 'r'
 remind :
 Sends notifications that are at most 1 week away from their deadline.
 
-Aliases : ['commands', 'c']
+Aliases : 'commands', 'c'
 show_commands :
 Displays every available command and its description.
 

@@ -183,7 +183,7 @@ class BotCommands:
 
 c = BotCommands()
 
-@bot.message_handler(regexp=r"(search|s|filter|f) \w+")
+@bot.message_handler(regexp=r"(search|filter) \w+")
 def search(message):
     """
     Searches every notification and returns a "view" if more than one match is found.
