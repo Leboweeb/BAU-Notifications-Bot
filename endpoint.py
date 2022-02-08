@@ -140,4 +140,6 @@ with requests.Session() as Session:
                            headers=service_headers,
                            json=courses_payload,
                            params=courses_querystring)
-    file_handler("courses.json", "w", json.dumps(courses.json(), indent=4))
+    required_json = courses.json()
+    if required_json:
+        file_handler("courses.json", "w", json.dumps(required_json, indent=4))
