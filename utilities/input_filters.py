@@ -80,7 +80,7 @@ def mapping_init():
     file_handler("mappings.json", "w", json.dumps(mappings, indent=4))
 
 
-def lockfile_cleanup(res: dict) -> List[Announcement]:
+def notification_cleanup(res: List[Announcement]) -> List[Announcement]:
     important_notifications = hilight(res)
     important_notifications = PostponedHandler(
         important_notifications).find_matching()
@@ -89,12 +89,12 @@ def lockfile_cleanup(res: dict) -> List[Announcement]:
     return important_notifications
 
 
-def hilight(res: dict) -> List[Announcement]:
+def hilight(res: List[Announcement]) -> List[Announcement]:
     def _important_notification(Notification: Announcement):
         if re.findall(
-            r"\blab\b|\btest\b|\bquiz\b|\bfinal\b|\bgrades\b|\bgrade\b|\bmakeup\b|\bincomplete exam\b|\bproject\b",
+            r"\blab\b|\btest\b|\bquiz\b|\bfinal\b|\bgrades\b|\bgrade\b|\bmakeup\b|\bincomplete exam\b|\bproject\b|\bsession\b",
             Notification.message.lower(),
                 flags=re.MULTILINE):
             return True
-    important_objects = list(filter(_important_notification, ALL_NOTIFICATIONS))
+    important_objects = list(filter(_important_notification, res))
     return important_objects

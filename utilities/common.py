@@ -21,6 +21,7 @@ def my_format(item, description=None, level=logging.info):
         return level(f"{description}: {item}")
     return level(f"{item}")
 
+
 def file_handler(file, mode="r", text=None, relative=False):
     try:
         if file is not None:
@@ -45,9 +46,13 @@ def is_similar(first, second, ratio):
 
 def flatten_iter(T, out_iter=tuple) -> Iterable:
     try:
-        return out_iter(it.chain.from_iterable(T))
+        if out_iter:
+            return out_iter(it.chain.from_iterable(T))
+        elif out_iter == None:
+            return it.chain.from_iterable(T)
     except TypeError:
         return T
+
 
 def gen_exec(gen):
     """
@@ -62,7 +67,10 @@ def clean_list(T: Iterable):
     return list(filter(None, T))
 
 
-def bool_return(thing, condition=None, default=None):
+def bool_return(thing, condition=None, strict=True, default=None):
+    if strict:
+        if thing:
+            return thing
     if condition:
         return thing if condition else default
     return thing if thing else default
@@ -96,7 +104,8 @@ def null_safe(*args: Iterable, mode="list"):
 
 def coerce_to_none(*args):
     if args:
-        return list(None for arg in args if not arg)
+        for arg in args:
+            yield bool_return(arg, default=None, strict=False)
 
 
 def replace_substrings(substr_tuple_iter, text):
@@ -104,11 +113,26 @@ def replace_substrings(substr_tuple_iter, text):
         result = reduce(lambda s, v: s.replace(*v), substr_tuple_iter, text)
         return result
 
+def pad_iter(iterable:Iterable, items:Iterable, amount=None) -> tuple:
+    padding = (items,) * amount if amount else items
 
-def bool_return(thing, condition=None, default=None):
-    if condition:
-        return thing if condition else default
-    return thing if thing else default
+    def _gen():
+        def not_iterable(thing):
+            res = (it.chain((thing,), padding))
+            res = it.takewhile(lambda item: True, res)
+            for i in res:
+                yield i
+        try:
+            if isinstance(iterable, str):
+                raise TypeError
+            res = tuple(it.chain.from_iterable((iterable, padding)))
+            for i, j in zip(iterable, res):
+                yield i if i else j
+
+        except TypeError:
+            yield from not_iterable(iterable)
+    return tuple(_gen())
+
 
 
 def infinite_conditional(*args):
@@ -127,6 +151,7 @@ def infinite_conditional(*args):
             if augmented_all(arg[0:-1]):
                 return arg[-1]()
 
+
 def map_aliases(name: str):
     if "_" in name:
         aliases = (name, name.split("_")[1], chr(
@@ -136,11 +161,12 @@ def map_aliases(name: str):
 
     return {alias: name for alias in aliases}
 
+
 @dataclass
 class Announcement:
     title: str
     message: str
-    ID: str
+    time_created: str
     subject = ""
     subject_code = ""
     subject_type = None
@@ -151,7 +177,15 @@ class Announcement:
 
 def run(x: Coroutine): return asyncio.run(x)
 
+
 def notifications_wrapper() -> List[dict]:
     res = file_handler("results.json")
     data = json.loads(res)[0]["data"]["notifications"]
     return data
+
+
+def autocorrect(container: Iterable, msg: str, ratio=0.7):
+    msg = msg.lower()
+    corrected = next(
+        filter(lambda x: is_similar(msg,x, ratio), container), None)
+    return bool_return(corrected)

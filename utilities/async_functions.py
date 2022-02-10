@@ -3,7 +3,7 @@ import re
 import datefinder
 import itertools as it
 from datetime import datetime
-from common import Announcement, file_handler, json
+from utilities.common import Announcement, file_handler, json
 from typing import AsyncGenerator, List
 
 
@@ -32,10 +32,10 @@ async def get_data(dicts: list[dict]) -> List[Announcement]:
     objects = [i for i in dicts]
     mappings = json.loads(file_handler("mappings.json"))
     keys = ("subject",
-            "fullmessage", "id")
+            "fullmessage", "timecreatedpretty")
 
     non_exam_types, exam_types = (
-        "lab", "project"), ("quiz", "test", "exam", "grades")
+        "lab", "project","session"), ("quiz", "test", "exam", "grades")
 
     async def _make_announcement(obj):
         announcement = Announcement(
@@ -45,8 +45,12 @@ async def get_data(dicts: list[dict]) -> List[Announcement]:
     objects = await collect_tasks(_make_announcement, objects)
 
     async def _attr_worker(announcement: Announcement):
-        announcement.subject_code, announcement.subject_type = announcement.title.split(
-            ":")
+        try:
+            announcement.subject_code, announcement.subject_type = announcement.title.split(
+                ":")
+        except ValueError:
+            announcement.subject_code, announcement.subject_type = announcement.title.split(":")[
+                0], None
         announcement.subject = mappings[announcement.subject_code]
         # I love the union syntax so much, I'm legit crying. WHY WAS IT SO
         # HARD IN PYTHON 2? WHYYYYYY ??
@@ -57,9 +61,10 @@ async def get_data(dicts: list[dict]) -> List[Announcement]:
             "---------------------------------------------------------------------")
         announcement.message = split[1]
         try:
-            announcement.subject_type = re.findall("|".join(it.chain(
-                non_exam_types, exam_types)), announcement.subject_type.lower(), re.MULTILINE)[0]
-            announcement.subject_type = type_dict[announcement.subject_type]
+            if announcement.subject_type:
+                announcement.subject_type = re.findall("|".join(it.chain(
+                    non_exam_types, exam_types)), announcement.subject_type.lower(), re.MULTILINE)[0]
+                announcement.subject_type = type_dict[announcement.subject_type]
 
         except (KeyError, IndexError):
             announcement.subject_type = None

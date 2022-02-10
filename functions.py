@@ -2,8 +2,8 @@ import httpx
 from functools import reduce
 from bs4 import BeautifulSoup
 from typing import Iterable
-from utilities.common import Announcement, my_format, notifications_wrapper, run, file_handler, json
-from utilities.input_filters import lockfile_cleanup, ALL_NOTIFICATIONS
+from utilities.common import Announcement, flatten_iter, my_format, notifications_wrapper, run, file_handler, json, autocorrect
+from utilities.input_filters import notification_cleanup, ALL_NOTIFICATIONS
 
 
 
@@ -129,16 +129,12 @@ useful for making arbitrary requests to it.
 
 class TelegramInterface:
     def __init__(self) -> None:
-        self.notifications_dict = notifications_wrapper()
-        self.notifications = lockfile_cleanup(
-            self.notifications_dict)
         self.unfiltered_notifications = ALL_NOTIFICATIONS
+        self.notifications = notification_cleanup(
+            self.unfiltered_notifications)
         self.course_mappings_dict = json.loads(file_handler("mappings.json"))
         self.stripped_course_numbers = list(map(lambda x: x.split(
             "-")[0].lower(), self.course_mappings_dict.values()))
-        self.urgent_notifications_gen = (
-            i for i in self.notifications
-            if i.timedelta and 1 <= i.timedelta <= 7)
         self.update_links_and_meetings()
 
     def update_links_and_meetings(self):
@@ -159,20 +155,28 @@ class TelegramInterface:
 
     def get_index_from_name(self, query):
         query = query.replace(" ", "").strip()
+        reference_tuple = self.course_mappings_dict.items()
+        reference_tuple = tuple(
+            map(lambda tup: (tup[0].lower().split("-")[0], tup[1].lower()), reference_tuple))
         try:
             index = None
             if query == "":
                 raise TypeError("empty strings are not allowed")
-            reference_list = self.course_mappings_dict.items()
-            reference_list = tuple(
-                map(lambda tup: (tup[0].lower().split("-")[0], tup[1].lower()), reference_list))
-            for i, j in zip(reference_list, range(len(reference_list))):
+            for i, j in zip(reference_tuple, range(len(reference_tuple))):
                 if query in i[0] or query in i[1]:
                     index = j
+            if index == None:
+                try:
+                    reference_tuple = flatten_iter(reference_tuple)
+                    index = reference_tuple.index(autocorrect(reference_tuple,query,ratio=0.75))
+                except (ValueError,IndexError):
+                    index = None
             return index
 
         except TypeError:
             return None
 
     def get_name_from_index(self, index: int):
-        return self.course_mappings_dict[tuple(self.course_mappings_dict.keys())[index]]
+        if index:
+            return self.course_mappings_dict[tuple(self.course_mappings_dict.keys())[index]]
+            
