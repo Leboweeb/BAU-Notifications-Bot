@@ -5,6 +5,7 @@ import itertools as it
 from dataclasses import dataclass
 import json
 import logging
+from tokenize import triple_quoted
 from typing import Coroutine, Iterable, List
 
 FORMAT = "%(levelname)s %(asctime)s - %(message)s"
@@ -113,26 +114,17 @@ def replace_substrings(substr_tuple_iter, text):
         result = reduce(lambda s, v: s.replace(*v), substr_tuple_iter, text)
         return result
 
-def pad_iter(iterable:Iterable, items:Iterable, amount=None) -> tuple:
-    padding = (items,) * amount if amount else items
 
+def pad_iter(iterable: Iterable, items: Iterable, amount=None) -> tuple:
+    padding = [items] * amount if amount else items
+    if not hasattr(iterable,"__iter__") or isinstance(iterable,str):
+        iterable = (iterable,)
+    iterable = iter(iterable)
     def _gen():
-        def not_iterable(thing):
-            res = (it.chain((thing,), padding))
-            res = it.takewhile(lambda item: True, res)
-            for i in res:
-                yield i
-        try:
-            if isinstance(iterable, str):
-                raise TypeError
-            res = tuple(it.chain.from_iterable((iterable, padding)))
-            for i, j in zip(iterable, res):
-                yield i if i else j
-
-        except TypeError:
-            yield from not_iterable(iterable)
+        for i in padding:
+            yield next(iterable or i,i)
+    
     return tuple(_gen())
-
 
 
 def infinite_conditional(*args):
@@ -187,5 +179,5 @@ def notifications_wrapper() -> List[dict]:
 def autocorrect(container: Iterable, msg: str, ratio=0.7):
     msg = msg.lower()
     corrected = next(
-        filter(lambda x: is_similar(msg,x, ratio), container), None)
+        filter(lambda x: is_similar(msg, x, ratio), container), None)
     return bool_return(corrected)

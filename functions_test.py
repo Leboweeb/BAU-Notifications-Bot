@@ -1,7 +1,5 @@
 import unittest
-from functions import TelegramInterface
-from idle import BotCommands
-from utilities.common import autocorrect, coerce_to_none, flatten_iter
+from utilities.common import coerce_to_none, pad_iter
 
 
 
@@ -16,28 +14,37 @@ def run_suites(suite=None, func=None):
         runner.run(suite)
 
 
-def test_prepper(obj,cases, assertions, messages):
-    for i,j,k in zip(cases,assertions,messages):
-        obj.assertEqual(i,j,k)
+def test_prepper(obj,cases, assertions, messages=None):
+    def _check(case,assertion,message=None):
+        if not message:
+            obj.assertEqual(case,assertion)
+        else:
+            obj.assertEqual(case,assertion,message)
+    if messages:
+        container = zip(cases,assertions,messages)
+    else:
+        container = zip(cases,assertions)
+    for i in container:
+        _check(*i)
 
 
 class SanityChecks(unittest.TestCase):
-    
+ 
     def test_basic_functions(self):
         self.assertEqual(list(coerce_to_none(0,[],set(),tuple(),{})),[None]*5)
         self.assertEqual(tuple(coerce_to_none(1,None,0,object)),(1,None,None,object))
     
-    def test_name_getter(self):
-        t = TelegramInterface()
-        index_getter = t.get_index_from_name
-        self.assertEqual(t.get_name_from_index(index_getter("math 283")),"Differential Equations","Should get course names from codes")
-        self.assertEqual(t.get_name_from_index(index_getter("calc")),"Calculus","Should get courses from short names as well.")
-        self.assertEqual(t.get_name_from_index(index_getter("mathe 283")),"Differential Equations","Should get courses from misspelled course codes")
-        self.assertEqual(t.get_name_from_index(index_getter("")),None,"Should handle invalid input")
+    def test_pad_iter(self):
+        cases = [["fag"],"fag",(object,object),(object),1,False]
+        cases = [pad_iter(i,None,2) for i in cases]
+        assertions = [("fag",None),("fag",None),(object,object),(object,None),(1,None),(False,None)]
+        messages = ["Should handle a list of strings","Should handle a string""Should handle a tuple of objects","Should handle a tuple of objects","Should handle numbers","Should handle boolean values"]
+        test_prepper(self,cases,assertions,messages)
+        self.assertEqual(pad_iter((1,2,3),(False,)*4),(1,2,3,False),"Should work without an amount as well")
 
 if __name__ == "__main__":
     # unittest.main()
     suite = unittest.TestSuite()
-    suite.addTest(SanityChecks(SanityChecks.test_working_autocorrect.__name__))
+    suite.addTest(SanityChecks(SanityChecks.test_pad_iter.__name__))
     runner = unittest.TextTestRunner()
     runner.run(suite)

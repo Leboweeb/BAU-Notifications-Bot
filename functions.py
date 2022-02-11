@@ -2,20 +2,19 @@ import httpx
 from functools import reduce
 from bs4 import BeautifulSoup
 from typing import Iterable
-from utilities.common import Announcement, flatten_iter, my_format, notifications_wrapper, run, file_handler, json, autocorrect
+from utilities.common import Announcement, clean_list, flatten_iter, my_format, notifications_wrapper, run, file_handler, json, autocorrect
 from utilities.input_filters import notification_cleanup, ALL_NOTIFICATIONS
 
 
 
 def notification_message_builder(
         notification: Announcement, custom_message=None):
-    attrs = ("subject", "message", "deadline")
+    attrs = ("title","subject", "message", "deadline")
     strings = [getattr(notification, attr)
                for attr in attrs]
     prefixes = (i.capitalize() for i in attrs)
-    strings[0] = f"{notification.subject} ({notification.subject_code})"
     if custom_message:
-        strings[1] = custom_message
+        strings[2] = custom_message
 
     return f"""
     ---------------------------------------
@@ -24,6 +23,25 @@ def notification_message_builder(
 
     """
 
+def search_notifications(query):
+    def _search_announcement(announcement: Announcement, query: str):
+        msg = announcement.message.lower()
+        highlighted_string = search_case_insensitive(
+            query, announcement.message)
+        if msg and highlighted_string:
+            return notification_message_builder(announcement, custom_message=highlighted_string)
+    messages = (_search_announcement(i, query)
+                for i in ALL_NOTIFICATIONS)
+    messages = clean_list(messages)
+    if query:
+        if len(messages) > 1:
+            messages_str = string_builder(
+                messages, range(1, len(messages)+1))
+            prompt = f"\nFound [1-{len(messages)}]"
+            messages_str = f"{messages_str}\n{prompt}"
+            return messages_str
+        elif len(messages) == 1:
+            return messages[0]
 
 def soup_bowl(html): return BeautifulSoup(html, "lxml")
 
@@ -179,4 +197,9 @@ class TelegramInterface:
     def get_name_from_index(self, index: int):
         if index:
             return self.course_mappings_dict[tuple(self.course_mappings_dict.keys())[index]]
+    
+    def name_wrapper(self,query):
+        if query:
+            index = self.get_index_from_name(query)
+            return self.get_name_from_index(index)
             

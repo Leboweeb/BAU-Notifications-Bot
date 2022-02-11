@@ -1,10 +1,12 @@
 """
 Bot listens to commands here.
 """
+import inspect
+from pyexpat.errors import messages
 import telebot
 from concurrent.futures import ThreadPoolExecutor
-from functions import TelegramInterface, notification_message_builder, search_case_insensitive, string_builder, ALL_NOTIFICATIONS
-from utilities.common import Announcement, autocorrect, clean_list, coerce_to_none, file_handler, is_similar, limit, null_safe, pad_iter
+from functions import TelegramInterface, notification_message_builder, search_case_insensitive, search_notifications, string_builder, ALL_NOTIFICATIONS
+from utilities.common import Announcement, autocorrect, clean_list, coerce_to_none, file_handler, flatten_iter, is_similar, limit, null_safe, pad_iter
 from webmeta import WebsiteMeta
 
 testing = True
@@ -66,11 +68,15 @@ def get_chat_id(message):
 
 
 def map_aliases(name: str):
+    default_aliases = [name, name[0]]
+    aliases = default_aliases
     if "_" in name:
-        aliases = (name, name.split("_")[1], chr(
-            min(ord(name.split("_")[1][0]), ord(name[0]))))
-    else:
-        aliases = (name, name[0])
+        split = name.split("_")
+        if len(split) == 2:
+            aliases = (name, split[1], chr(
+                min(ord(split[1][0]), ord(name[0]))))
+        else:
+            aliases.append(split[0])
 
     return {alias: name for alias in aliases}
 
@@ -93,6 +99,7 @@ except (KeyError, FileNotFoundError) as e:
 class BotCommands:
     def __init__(self) -> None:
         self.last_command = None
+        self.last_argument = ""
         self.interactive = False
         BotCommands.commands = [func for func in dir(BotCommands) if callable(
             getattr(BotCommands, func)) and not func.startswith("__")]
@@ -102,7 +109,7 @@ class BotCommands:
             BotCommands.aliases |= alias
 
     @staticmethod
-    def meeting_links(message):
+    def meeting_links():
         """
         A convenience function to send the zoom/teams meeting links of every subject in a text file.
         """
@@ -110,15 +117,15 @@ class BotCommands:
         with open("links_and_meetings.json") as f:
             string_to_be_processed = f.read()
         file_handler("links_and_meetings.txt", "w", string_to_be_processed)
-        bot.send_document(get_chat_id(message), document=open(
+        bot.send_document(chat_id, document=open(
             "links_and_meetings.txt", "rb"))
 
     @staticmethod
-    def help(message):
+    def help():
         """
         Displays relevant help text.
         """
-        send_message(message, """
+        send_message(None, """
         Features:
 
         * Automatically filters out unimportant notifications with the /important or /i command and sends them in a digestible format.
@@ -143,17 +150,17 @@ class BotCommands:
         """)
 
     @staticmethod
-    def important_notifications(message):
+    def important_notifications():
         """
         Returns notifications representing exams, quizzes, exam deadlines, labs, etc.. in no particular order.
         If you want to filter notifications by type, call the search function with an argument.
         """
         gen = (notification_message_builder(i)
                for i in interface.notifications)
-        send_multithreaded(gen, message)
+        send_multithreaded(gen, None)
 
     @staticmethod
-    def show_commands(message):
+    def show_commands():
         """
         Displays every available command and its description.
         """
@@ -165,122 +172,96 @@ class BotCommands:
 
         messages = "\n".join(limit(_descriptions(
         ), None))
-        send_message(message, messages)
+        send_message(None, messages)
 
     @staticmethod
-    def remind(message):
+    def remind():
         """
         Sends notifications that are at most  1 week away from their deadline.
         """
         autoremind()
 
     @staticmethod
-    def search(message):
+    def search(message: str):
         """
         Searches every notification and returns a "view" if more than one match is found.
         It can also search by notification type (lab, quiz, test, etc...) , see the help text or github page for more information.
         """
+        potential_messages = search_notifications(message)
+        send_message(None, potential_messages) if potential_messages else send_message(None,"No notifications matching this word were found.")
+
+
+    @staticmethod
+    def filter_by_type(query):
+        course_mappings = interface.course_mappings_dict
+        messages = interface.unfiltered_notifications
+        processed_message = ""
         try:
-            initial_string = message.split(" ")[:2]
-            mode,query = pad_iter(initial_string,None,2)
-            if len(query) > 1:
-                query = " ".join(query)
-            else:
-                query = query[0]
-            null_safe(coerce_to_none(mode, query))
-        except ValueError:
-            send_message(
-                None, """Please provide values for both arguments to this function.
-                            Usage: (search/s) <text to find> or (filter,f) <type of notification(s)>. The types are : lab, test(quiz,exam,etc...), and project
-                            Example : search zoom -> finds the notification(s) that have the word "zoom"(Zoom and ZOOM are also accepted) and highlights it/them.
-                            filter lab -> finds all notifications that reminding of or announcing a lab.""")
+            processed_message = interface.name_wrapper(query)
+        except TypeError:
+            processed_message = None
 
-        def filter_by_type():
-            course_mappings = interface.course_mappings_dict
-            messages = interface.unfiltered_notifications
-            processed_message = ""
-            try:
-                processed_message = interface.get_index_from_name(query)
-                processed_message = tuple(course_mappings.keys())[
-                    processed_message]
-            except TypeError:
-                send_message(
-                    None, "No notifications of that subject were found")
+        def get_subjects_codes():
+            gen = (notification_message_builder(i) for i in messages if i.subject_code ==
+                   processed_message or i.subject == processed_message)
+            send_multithreaded(
+                gen, None)
 
-            def get_subjects_codes():
-                send_multithreaded(
-                    (i for i in messages if i.subject_code == processed_message or i.subject == processed_message), None)
+        def get_subjects_types():
+            messages = interface.notifications
+            if messages:
+                gen = (notification_message_builder(m)
+                       for m in messages if m.subject_type == overall_types[query])
+            if next(gen, None) != None:
+                send_multithreaded(gen, None)
 
-            def get_subjects_types():
-                messages = interface.notifications
-                if messages:
-                    gen = (notification_message_builder(m)
-                           for m in messages if m.subject_type == overall_types[query])
-                    if next(gen, None) != None:
-                        send_multithreaded(gen, None)
-                    else:
-                        send_message(
-                            None, "No notifications of that subject were found")
-
-            if processed_message not in course_mappings.items():
-                get_subjects_types()
-            else:
-                get_subjects_codes()
-
-        def _search():
-            def _search_announcement(announcement: Announcement, query: str):
-                msg = announcement.message.lower()
-                highlighted_string = search_case_insensitive(
-                    query, announcement.message)
-                if msg and highlighted_string:
-                    return notification_message_builder(announcement, custom_message=highlighted_string)
-            messages = (_search_announcement(i, query)
-                        for i in ALL_NOTIFICATIONS)
-            messages = clean_list(messages)
-            if len(messages) == 1:
-                messages = messages[
-                    0]
-            elif len(messages) > 1:
-                send_message(
-                    None, f"Found more than one match for {query} in announcements:")
-                messages_str = string_builder(
-                    (i for i in messages), range(1, len(messages)+1))
-                prompt = f"\nFound [1-{len(messages)}"
-                messages = f"{messages_str}\n{prompt}"
-
-            send_message(None, messages)
-        mode_dict = {"search": _search, "s": _search,
-                     "filter": filter_by_type, "f": filter_by_type}
-        return mode_dict[mode]()
+        if processed_message not in flatten_iter(course_mappings.items()):
+            get_subjects_types()
+        elif processed_message:
+            get_subjects_codes()
+        else:
+            send_message(None, "No notifications of that subject were found")
 
 
 c = BotCommands()
 
 
+def func_caller(func, arguments):
+    try:
+        func(arguments)
+    except TypeError:
+        func()
+
+
 @bot.message_handler(content_types=["text"])
 def language_interpreter(message: telebot.types.Message):
-    execute_bot_command = lambda : c.last_command(message)
-    map_to_function = lambda m : getattr(BotCommands,c.aliases[m])
-    msg = message.text.lower()
-    in_aliases = msg in c.aliases
+    def execute_bot_command(arg): return func_caller(c.last_command, arg)
+    def map_to_function(m): return getattr(BotCommands, c.aliases[m])
+    thing = message.text.lower()
+    function = thing.split(" ")[0].strip()
+    argument = thing[len(function)+1:].strip()
+    in_aliases = function in c.aliases
     phrases = ("kif besta3mlo", "shou ba3mel", "shou hayda", "what is this")
     responses = ("yes", "y", "no", "n")
-    if any(i == msg for i in phrases) or "use this" in msg:
+    if any(i == function for i in phrases) or "use this" in function:
         send_message(message, intro)
     elif in_aliases:
-        c.last_command = map_to_function(msg)
-        execute_bot_command()
-    elif msg in responses:
-        if msg in responses[2:]:
-            send_message(message,"Abort.")
+        c.last_command = map_to_function(function)
+        print(c.last_command)
+        execute_bot_command(argument)
+    elif function in responses and c.interactive:
+        if function in responses[2:]:
+            send_message(message, "Abort.")
         else:
-            execute_bot_command()
+            func_caller(execute_bot_command, c.last_argument)
     elif not in_aliases:
-        corrected : str = autocorrect(c.aliases,msg)
-        c.last_command = map_to_function(corrected)
-        send_message(
-            message, f"{message.text} not recognized, did you mean {corrected} ? Type [y]es to execute or [n]o to abort")
-        c.interactive = True
+        corrected: str = autocorrect(c.aliases, function)
+        if corrected:
+            c.last_command = map_to_function(corrected)
+            c.last_argument = argument
+            send_message(
+                message, f"{message.text} not recognized, did you mean {corrected} ? Type [y]es to execute or [n]o to abort")
+            c.interactive = True
 
 
 if __name__ == '__main__':
