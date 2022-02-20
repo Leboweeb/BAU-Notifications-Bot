@@ -2,10 +2,12 @@ from collections import Counter
 import html
 from typing import List
 from utilities.async_functions import all_notifications, re
-from utilities.common import Announcement, bool_return, file_handler, gen_exec, is_similar,clean_list, json, notifications_wrapper
+from utilities.common import Announcement, file_handler, gen_exec, is_similar, clean_iter, json, notifications_wrapper
 
 
 ALL_NOTIFICATIONS = all_notifications(notifications_wrapper())
+
+
 class PostponedHandler:
 
     def __init__(self, notifications) -> None:
@@ -53,21 +55,13 @@ class PostponedHandler:
             self.compare_to_notification(i)
         return self.notifications
 
+
 def update_links(Announcements: List[Announcement]):
     links_dict = {
         announcement.subject: announcement.links
         for announcement in Announcements}
     file_handler("links_and_meetings.json", "w", json.dumps(
         links_dict, indent=4)) if links_dict else None
-
-
-def silent_autocorrect(container, msg, ratio=0.7):
-    msg = msg.lower()
-    corrected = next(
-        filter(lambda x: is_similar(msg, x, ratio), container), None)
-    return bool_return(corrected)
-
-
 
 
 def mapping_init():
@@ -84,7 +78,7 @@ def notification_cleanup(res: List[Announcement]) -> List[Announcement]:
     important_notifications = hilight(res)
     important_notifications = PostponedHandler(
         important_notifications).find_matching()
-    important_notifications = clean_list(
+    important_notifications = clean_iter(
         important_notifications)
     return important_notifications
 

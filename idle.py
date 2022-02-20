@@ -1,18 +1,12 @@
 """
 Bot listens to commands here.
 """
-import inspect
-from pyexpat.errors import messages
 import telebot
 from concurrent.futures import ThreadPoolExecutor
-from functions import TelegramInterface, notification_message_builder, search_case_insensitive, search_notifications, string_builder, ALL_NOTIFICATIONS
-from utilities.common import Announcement, autocorrect, clean_list, coerce_to_none, file_handler, flatten_iter, is_similar, limit, null_safe, pad_iter
-from webmeta import WebsiteMeta
+from functions import TelegramInterface, notification_message_builder, search_notifications
+from utilities.common import autocorrect, file_handler, flatten_iter, WebsiteMeta
 
-testing = True
 api_key, chat_id = WebsiteMeta.api_key, WebsiteMeta.public_context
-if testing:
-    chat_id = WebsiteMeta.testing_chat_context
 
 bot = telebot.TeleBot(api_key)
 
@@ -55,7 +49,7 @@ def autoremind():
 
 
 def send_message(message, text, mode=None):
-    if message == None:
+    if message is None:
         bot.send_message(chat_id, text, mode)
     try:
         bot.send_message(message.chat.id, text, parse_mode=mode)
@@ -82,7 +76,7 @@ def map_aliases(name: str):
 
 
 def send_multithreaded(T, message_object=None, function=None, *args, **kwargs):
-    if function == None:
+    if function is None:
         function = send_message
     with ThreadPoolExecutor() as executor:
         for item in T:
@@ -91,7 +85,7 @@ def send_multithreaded(T, message_object=None, function=None, *args, **kwargs):
 
 try:
     interface = TelegramInterface()
-except (KeyError, FileNotFoundError) as e:
+except (KeyError, FileNotFoundError):
     bot.send_message(
         chat_id, "The moodle webservice is down, I will not respond until a minute or two.")
 
@@ -170,8 +164,8 @@ class BotCommands:
                 aliases = list(map_aliases(i).keys())[1:]
                 yield f"Aliases : {aliases} \n{i} : {func.__doc__} "
 
-        messages = "\n".join(limit(_descriptions(
-        ), None))
+        messages = "\n".join(list(_descriptions(
+        )))
         send_message(None, messages)
 
     @staticmethod
@@ -188,8 +182,8 @@ class BotCommands:
         It can also search by notification type (lab, quiz, test, etc...) , see the help text or github page for more information.
         """
         potential_messages = search_notifications(message)
-        send_message(None, potential_messages) if potential_messages else send_message(None,"No notifications matching this word were found.")
-
+        send_message(None, potential_messages) if potential_messages else send_message(
+            None, "No notifications matching this word were found.")
 
     @staticmethod
     def filter_by_type(query):
@@ -212,7 +206,7 @@ class BotCommands:
             if messages:
                 gen = (notification_message_builder(m)
                        for m in messages if m.subject_type == overall_types[query])
-            if next(gen, None) != None:
+            if next(gen, None) is not None:
                 send_multithreaded(gen, None)
 
         if processed_message not in flatten_iter(course_mappings.items()):
@@ -239,7 +233,7 @@ def language_interpreter(message: telebot.types.Message):
     def map_to_function(m): return getattr(BotCommands, c.aliases[m])
     thing = message.text.lower()
     function = thing.split(" ")[0].strip()
-    argument = thing[len(function)+1:].strip()
+    argument = thing[len(function) + 1:].strip()
     in_aliases = function in c.aliases
     phrases = ("kif besta3mlo", "shou ba3mel", "shou hayda", "what is this")
     responses = ("yes", "y", "no", "n")
@@ -264,6 +258,12 @@ def language_interpreter(message: telebot.types.Message):
             c.interactive = True
 
 
+def entry_point(testing=True):
+    global chat_id
+    chat_id = WebsiteMeta.testing_chat_context if testing else WebsiteMeta.public_context
+
+
 if __name__ == '__main__':
+    entry_point()
     # autoremind()
     bot.infinity_polling()

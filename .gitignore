@@ -126,3 +126,5 @@ bot_temp/
 *.lockfile
 textfile/
 *env*
+*.html
+bot_setup.py

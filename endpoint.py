@@ -6,9 +6,7 @@ However, the results.json file seems to be updated in real time, so this should 
 """
 
 import requests
-import json
-from functions import file_handler, my_format, css_selector, url_encode, insert_into_dict, soup_bowl
-from webmeta import WebsiteMeta
+from utilities.common import add_cookies_to_header, file_handler, my_format, css_selector, url_encode, soup_bowl, json, WebsiteMeta
 
 result_json = ""
 LOGIN_URL = r"https://icas.bau.edu.lb:8443/cas/login?service=https%3A%2F%2Fmoodle.bau.edu.lb%2Flogin%2Findex.php"
@@ -111,11 +109,8 @@ with requests.Session() as Session:
         "desired cookies",
         f"{[cookie_jar['MoodleSession'], cookie_jar['BNES_MoodleSession']]}")
     moodle_session, bnes_moodle_session = cookie_jar['MoodleSession'], cookie_jar['BNES_MoodleSession']
-    service_headers, api_headers = insert_into_dict(
-        service_headers, 10,
-        ("Cookie",
-         fr"MoodleSession={moodle_session}; BNES_MoodleSession={bnes_moodle_session}")), insert_into_dict(api_headers, 10, ("Cookie",
-                                                                                                                            fr"MoodleSession={moodle_session}; BNES_MoodleSession={bnes_moodle_session}"))
+    service_headers, api_headers = tuple(add_cookies_to_header(
+        header, cookie_jar) for header in (service_headers, api_headers))
     r = Session.get(SECURE_URL, headers=service_headers)
     my_format("Reached secure page : ", f"{r.url == SECURE_URL}")
     moodle_html = soup_bowl(r.text)

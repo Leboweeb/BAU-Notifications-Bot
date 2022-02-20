@@ -1,15 +1,12 @@
-import httpx
 from functools import reduce
-from bs4 import BeautifulSoup
 from typing import Iterable
-from utilities.common import Announcement, clean_list, flatten_iter, my_format, notifications_wrapper, run, file_handler, json, autocorrect
+from utilities.common import Announcement, clean_iter, flatten_iter, file_handler, json, autocorrect
 from utilities.input_filters import notification_cleanup, ALL_NOTIFICATIONS
-
 
 
 def notification_message_builder(
         notification: Announcement, custom_message=None):
-    attrs = ("title","subject", "message", "deadline")
+    attrs = ("title", "subject", "message", "deadline")
     strings = [getattr(notification, attr)
                for attr in attrs]
     prefixes = (i.capitalize() for i in attrs)
@@ -23,6 +20,7 @@ def notification_message_builder(
 
     """
 
+
 def search_notifications(query):
     def _search_announcement(announcement: Announcement, query: str):
         msg = announcement.message.lower()
@@ -32,7 +30,7 @@ def search_notifications(query):
             return notification_message_builder(announcement, custom_message=highlighted_string)
     messages = (_search_announcement(i, query)
                 for i in ALL_NOTIFICATIONS)
-    messages = clean_list(messages)
+    messages = clean_iter(messages)
     if query:
         if len(messages) > 1:
             messages_str = string_builder(
@@ -42,23 +40,6 @@ def search_notifications(query):
             return messages_str
         elif len(messages) == 1:
             return messages[0]
-
-def soup_bowl(html): return BeautifulSoup(html, "lxml")
-
-
-def url_encode(vals):
-    vals = list(zip(vals, vals.values()))
-    for i, j in enumerate(vals):
-        vals[i] = "=".join(j)
-    return "&".join(vals)
-
-
-def insert_into_dict(dictionary, index, pair) -> dict:
-    keys, values = list(dictionary.keys()), list(dictionary.values())
-    keys.insert(index, pair[0])
-    values.insert(index, pair[1])
-    dictionary = dict(zip(keys, values))
-    return dictionary
 
 
 def search_case_insensitive(query: str, text: str):
@@ -71,12 +52,6 @@ def search_case_insensitive(query: str, text: str):
         return result
 
 
-def css_selector(html=None, selector="", value=None):
-    soup = BeautifulSoup(html, "lxml").select(selector)
-    soup = soup[0][value] if value else soup
-    return soup
-
-
 def string_builder(strings: Iterable, prefixes: Iterable,
                    separator: str = "\n") -> str:
     """
@@ -87,62 +62,6 @@ def string_builder(strings: Iterable, prefixes: Iterable,
             if string and prefix:
                 yield f"{prefix} : {string}"
     return separator.join(filter(None, built_strings()))
-
-
-def hilight_word(string: str, query) -> str:
-    if all((string, query)):
-        words = string.lower().split(" ")
-        words[words.index(query)] = f"**{query}**"
-        return " ".join(words)
-
-
-
-
-def authenticate(func):
-    """
-Authenticates an http request to the uni website before attempting to scrape data
-useful for making arbitrary requests to it.
-"""
-
-    async def wrapper_func():
-        async with httpx.AsyncClient(timeout=None, follow_redirects=True) as Client:
-            querystring = {
-                "service": "https://moodle.bau.edu.lb/login/index.php"}
-            LOGIN_URL = r"https://icas.bau.edu.lb:8443/cas/login?service=https%3A%2F%2Fmoodle.bau.edu.lb%2Flogin%2Findex.php"
-            login_headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.7113.93 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/jxl,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Origin": "https://icas.bau.edu.lb:8443",
-                "DNT": "1",
-                "Connection": "keep-alive",
-                "Referer": r"https://icas.bau.edu.lb:8443/cas/login?service=https%3A%2F%2Fmoodle.bau.edu.lb%2Flogin%2Findex.php",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "same-origin",
-                "Sec-Fetch-User": "?1",
-                "Sec-GPC": "1"}
-            page = await Client.get(url=LOGIN_URL)
-            execution = css_selector(
-                page.text, "[name=execution]", "value")
-            if (b := file_handler("creds.txt")):
-                b = b.split("\n")
-                username, password = b[:2]
-            encoded = url_encode(
-                {"username": username, "password": password,
-                 "execution": fr"{execution}", "_eventId": "submit",
-                 "geolocation": ""})
-            await Client.post(LOGIN_URL, data=encoded,
-                              headers=login_headers, params=querystring)
-
-            cookies = [Client.cookies.get(i) for i in (
-                'MoodleSession', 'BNES_MoodleSession')]
-            my_format(cookies, "Cookies in async api")
-            await func(cookies, Client)
-    return wrapper_func
 
 
 class TelegramInterface:
@@ -179,15 +98,16 @@ class TelegramInterface:
         try:
             index = None
             if query == "":
-                raise TypeError("empty strings are not allowed")
+                raise TypeError
             for i, j in zip(reference_tuple, range(len(reference_tuple))):
                 if query in i[0] or query in i[1]:
                     index = j
             if index == None:
                 try:
                     reference_tuple = flatten_iter(reference_tuple)
-                    index = reference_tuple.index(autocorrect(reference_tuple,query,ratio=0.75))
-                except (ValueError,IndexError):
+                    index = reference_tuple.index(
+                        autocorrect(reference_tuple, query, ratio=0.75))
+                except (ValueError, IndexError):
                     index = None
             return index
 
@@ -197,9 +117,8 @@ class TelegramInterface:
     def get_name_from_index(self, index: int):
         if index:
             return self.course_mappings_dict[tuple(self.course_mappings_dict.keys())[index]]
-    
-    def name_wrapper(self,query):
+
+    def name_wrapper(self, query):
         if query:
             index = self.get_index_from_name(query)
             return self.get_name_from_index(index)
-            

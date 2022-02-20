@@ -3,6 +3,7 @@ import endpoint
 import json
 from functions import file_handler
 
+
 class BotTestSuite(unittest.TestCase):
 
     def test_exists(self):
