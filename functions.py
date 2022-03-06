@@ -1,6 +1,6 @@
 from functools import reduce
 from typing import Iterable
-from utilities.common import Announcement, clean_iter, flatten_iter, file_handler, json, autocorrect
+from utilities.common import Announcement, bool_return, clean_iter, flatten_iter, file_handler, json, autocorrect, string_builder
 from utilities.input_filters import notification_cleanup, ALL_NOTIFICATIONS
 
 
@@ -9,7 +9,8 @@ def notification_message_builder(
     attrs = ("title", "subject", "message", "deadline")
     strings = [getattr(notification, attr)
                for attr in attrs]
-    prefixes = (i.capitalize() for i in attrs)
+    prefixes = [i.capitalize() for i in attrs]
+    strings.append(notification.time_created), prefixes.append("Time created")
     if custom_message:
         strings[2] = custom_message
 
@@ -34,7 +35,7 @@ def search_notifications(query):
     if query:
         if len(messages) > 1:
             messages_str = string_builder(
-                messages, range(1, len(messages)+1))
+                messages, range(1, len(messages) + 1))
             prompt = f"\nFound [1-{len(messages)}]"
             messages_str = f"{messages_str}\n{prompt}"
             return messages_str
@@ -52,16 +53,6 @@ def search_case_insensitive(query: str, text: str):
         return result
 
 
-def string_builder(strings: Iterable, prefixes: Iterable,
-                   separator: str = "\n") -> str:
-    """
-    Builds a string incrementally until it reaches a breakpoint (a field is missing)
-    """
-    def built_strings():
-        for string, prefix in zip(strings, prefixes):
-            if string and prefix:
-                yield f"{prefix} : {string}"
-    return separator.join(filter(None, built_strings()))
 
 
 class TelegramInterface:
@@ -102,7 +93,7 @@ class TelegramInterface:
             for i, j in zip(reference_tuple, range(len(reference_tuple))):
                 if query in i[0] or query in i[1]:
                     index = j
-            if index == None:
+            if index is None:
                 try:
                     reference_tuple = flatten_iter(reference_tuple)
                     index = reference_tuple.index(
@@ -119,6 +110,7 @@ class TelegramInterface:
             return self.course_mappings_dict[tuple(self.course_mappings_dict.keys())[index]]
 
     def name_wrapper(self, query):
+        query = query.lower()
         if query:
             index = self.get_index_from_name(query)
-            return self.get_name_from_index(index)
+            return bool_return(self.get_name_from_index(index), query)

@@ -1,10 +1,13 @@
 """
 Bot listens to commands here.
 """
+from datetime import datetime
+import os
 import telebot
+from datefinder import find_dates
 from concurrent.futures import ThreadPoolExecutor
 from functions import TelegramInterface, notification_message_builder, search_notifications
-from utilities.common import autocorrect, file_handler, flatten_iter, WebsiteMeta
+from utilities.common import autocorrect, checker_factory, file_handler, flatten_iter, WebsiteMeta, null_safe_chaining, safe_next
 
 api_key, chat_id = WebsiteMeta.api_key, WebsiteMeta.public_context
 
@@ -31,21 +34,62 @@ non_exam_types = dict(non_exam_types)
 overall_types = exam_types | non_exam_types
 
 
-def autoremind():
-    def augmented_checker(item):
-        try:
-            if 0 <= item <= 7:
-                return True
-            return False
-        except TypeError:
-            return False
+def autoremind_worker():
 
-    notifications = (
-        i for i in interface.unfiltered_notifications if i.subject_type and augmented_checker(i.timedelta) or augmented_checker(i.time_created))
-    links = next(notifications, None)
-    if links:
-        send_multithreaded((notification_message_builder(i)
-                           for i in notifications), chat_id)
+    is_relatively_recent = checker_factory(0, 7)
+
+    def override(
+        x): return "next week" in x.message and x.subject_type is not None and x.subject_type != "session"
+
+    def notification_gen(T):
+        for notification in T:
+            if override(notification) or is_relatively_recent(notification.time_delta):
+                yield notification
+    result = notification_gen(interface.notifications)
+    result = (notification_message_builder(i) for i in result)
+    return tuple(result)
+
+
+def filter_by_type_worker(query):
+    def _traditional_types():
+        course_mappings = interface.course_mappings_dict
+        messages = interface.unfiltered_notifications
+        processed_message = ""
+        try:
+            processed_message = interface.name_wrapper(query)
+        except TypeError:
+            processed_message = None
+
+        def subjects_codes_condition(x):
+            return course_mappings[x.subject_code.split(":")[0]] == processed_message
+
+        def subjects_types_condition(
+            x): return x.subject_type == overall_types[processed_message]
+
+        if processed_message in flatten_iter(course_mappings.items()):
+            return filter(subjects_codes_condition, messages)
+        elif processed_message in overall_types:
+            return filter(subjects_types_condition, messages)
+
+    if query == "recent":
+        checker = checker_factory(0, 4)
+
+        def _gen():
+            for i in interface.unfiltered_notifications:
+                potential_date = safe_next(find_dates(i.time_created))
+                potential_date = null_safe_chaining(
+                    potential_date - datetime.now(), "day")
+                if checker(potential_date):
+                    yield notification_message_builder(i)
+        return _gen()
+    else:
+        return _traditional_types()
+
+
+def autoremind():
+    result = autoremind_worker()
+    send_multithreaded(result)
+    return result
 
 
 def send_message(message, text, mode=None):
@@ -173,7 +217,10 @@ class BotCommands:
         """
         Sends notifications that are at most  1 week away from their deadline.
         """
-        autoremind()
+        stuff = autoremind()
+        print(stuff)
+        if not stuff:
+            send_message(None, "No urgent notifications found")
 
     @staticmethod
     def search(message: str):
@@ -187,34 +234,23 @@ class BotCommands:
 
     @staticmethod
     def filter_by_type(query):
-        course_mappings = interface.course_mappings_dict
-        messages = interface.unfiltered_notifications
-        processed_message = ""
-        try:
-            processed_message = interface.name_wrapper(query)
-        except TypeError:
-            processed_message = None
-
-        def get_subjects_codes():
-            gen = (notification_message_builder(i) for i in messages if i.subject_code ==
-                   processed_message or i.subject == processed_message)
-            send_multithreaded(
-                gen, None)
-
-        def get_subjects_types():
-            messages = interface.notifications
-            if messages:
-                gen = (notification_message_builder(m)
-                       for m in messages if m.subject_type == overall_types[query])
-            if next(gen, None) is not None:
-                send_multithreaded(gen, None)
-
-        if processed_message not in flatten_iter(course_mappings.items()):
-            get_subjects_types()
-        elif processed_message:
-            get_subjects_codes()
+        def _traditional_types():
+            result = filter_by_type_worker(query)
+            if result:
+                send_multithreaded(notification_message_builder(i)
+                                   for i in result)
+            else:
+                send_message(None, "No notifications of that type were found")
+        if query == "recent":
+            checker = checker_factory(0, 4)
+            send_multithreaded(notification_message_builder(
+                i) for i in interface.unfiltered_notifications if checker(null_safe_chaining(next(find_dates(i.time_created), None), "day")))
         else:
-            send_message(None, "No notifications of that subject were found")
+            _traditional_types()
+
+    @staticmethod
+    def hot_reload():
+        pass
 
 
 c = BotCommands()
@@ -237,11 +273,10 @@ def language_interpreter(message: telebot.types.Message):
     in_aliases = function in c.aliases
     phrases = ("kif besta3mlo", "shou ba3mel", "shou hayda", "what is this")
     responses = ("yes", "y", "no", "n")
-    if any(i == function for i in phrases) or "use this" in function:
+    if any(i == thing for i in phrases) or "use this" in thing:
         send_message(message, intro)
     elif in_aliases:
         c.last_command = map_to_function(function)
-        print(c.last_command)
         execute_bot_command(argument)
     elif function in responses and c.interactive:
         if function in responses[2:]:
@@ -262,8 +297,14 @@ def entry_point(testing=True):
     global chat_id
     chat_id = WebsiteMeta.testing_chat_context if testing else WebsiteMeta.public_context
 
+    def update_notifications():
+        os.chdir("/".join(__file__.split("/")[:-1]))
+        os.system("python3 endpoint.py")
+    # update_notifications()
+    # print("Done updating notifications")
+
 
 if __name__ == '__main__':
-    entry_point()
+    entry_point(True)
     # autoremind()
     bot.infinity_polling()

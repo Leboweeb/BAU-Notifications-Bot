@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 import logging
-import httpx
-import asyncio
-import re
-import datefinder
 import itertools as it
 from datetime import datetime
-from utilities.common import Announcement, Assignment, add_cookies_to_header, clean_iter, coerce_to_none, courses_wrapper, css_selector, file_handler, json, my_format, soup_bowl, url_encode
-from typing import AsyncGenerator, List, Tuple
+import asyncio
+import re
+from typing import AsyncGenerator, Iterable, List, Sequence, Tuple
+import httpx
+import datefinder
+from utilities.common import REQUIRED_DATE_FORMAT, Announcement, Assignment, add_cookies_to_header, bool_return, clean_iter, coerce_to_none, combine, courses_wrapper, css_selector, file_handler, flatten_iter, flattening_iterator, not_singleton, json, my_format, get_sequence_or_item, null_safe_chaining, safe_next, soup_bowl, url_encode
 
 
 @dataclass(frozen=True)
@@ -37,9 +37,9 @@ async def get_data(dicts: list[dict]) -> List[Announcement]:
     mappings = json.loads(file_handler("mappings.json"))
     keys = ("subject",
             "fullmessage", "timecreatedpretty")
-
+    CURRENT_DAY = datetime.now().day
     non_exam_types, exam_types = (
-        "lab", "project", "session"), ("quiz", "test", "exam", "grades")
+        "lab", "project", "session"), ("quiz", "test", "exam", "grades", "midterm")
 
     async def _make_announcement(obj):
         announcement = Announcement(
@@ -67,19 +67,34 @@ async def get_data(dicts: list[dict]) -> List[Announcement]:
         try:
             if announcement.subject_type:
                 announcement.subject_type = re.findall("|".join(it.chain(
-                    non_exam_types, exam_types)), announcement.subject_type.lower(), re.MULTILINE)[0]
-                announcement.subject_type = type_dict[announcement.subject_type]
+                    non_exam_types, exam_types)), announcement.subject_type.lower(), re.MULTILINE)
+                temp = get_sequence_or_item(announcement.subject_type)
+                announcement.subject_type = temp
+                if not_singleton(announcement.subject_type) is False:
+                    announcement.subject_type = type_dict[temp]
 
         except (KeyError, IndexError):
             announcement.subject_type = None
 
+        def has_required_format(collection: tuple) -> bool:
+            DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",
+                                                                                                            "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "Decmeber")
+
+            def abbreviate(x): return x[:3]
+            day_abbr, mon_abbr = (map(abbreviate, i) for i in (DAYS, MONTHS))
+            _, string = collection
+            DATE_WORDS = combine(DAYS, MONTHS, day_abbr, mon_abbr)
+            cond = re.findall("|".join(DATE_WORDS), string, re.IGNORECASE)
+            return bool(cond)
+
         try:
-            fuzzy_date = tuple(
-                datefinder.find_dates(announcement.message))[0]
+            fuzzy_date = safe_next(
+                filter(has_required_format,  datefinder.find_dates(announcement.message, True)))
         except IndexError:
             fuzzy_date = None
         if fuzzy_date:
-            announcement.deadline = fuzzy_date.strftime(r"%A %B %d %Y")
+            fuzzy_date = fuzzy_date[0]
+            announcement.deadline = fuzzy_date.strftime(REQUIRED_DATE_FORMAT)
             if fuzzy_date.tzinfo:
                 fuzzy_date = next(
                     datefinder.find_dates(
@@ -89,7 +104,7 @@ async def get_data(dicts: list[dict]) -> List[Announcement]:
                                 announcement.message)[1],
                             "")))
             dt = (fuzzy_date - datetime.now()).days
-            announcement.timedelta = dt
+            announcement.time_delta = dt
 
         async def _course_links(Notification: Announcement):
             """
@@ -161,14 +176,15 @@ async def prep_courses():
     fields = ("fullname", "viewurl")
 
     async def course_generator(T: List[dict], fields):
-        def testing_predicate(i): return 0 < i["progress"] < 100 or i["fullname"] == "Electricity and Magnetism"
+        def testing_predicate(
+            i): return 0 < i["progress"] < 100 or i["fullname"] == "Electricity and Magnetism"
         for i in T:
             if testing_predicate(i):
                 yield Course(*[i.get(f) for f in fields])
     return {i async for i in course_generator(courses, fields)}
 
 
-@authenticate
+@ authenticate
 async def find_assignments(cookies, Client: httpx.AsyncClient) -> Tuple[Assignment]:
     ASSIGNMENT_SELECTOR = r'li[class="activity assign modtype_assign "]'
 
@@ -229,7 +245,7 @@ async def find_assignments(cookies, Client: httpx.AsyncClient) -> Tuple[Assignme
             if table_list:
                 deadline = (_search_children(i, "time remaining")
                             for i in table_list)
-                deadline = collect_tasks(tasks=deadline)
+                deadline = collect_tasks(collection=deadline)
                 deadline = next(filter(None, deadline), None).select_one("td")
                 return deadline.text.strip()
         deadline = await find_deadline(submission_table)

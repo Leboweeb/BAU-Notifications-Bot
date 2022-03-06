@@ -1,12 +1,14 @@
 import asyncio
+from datetime import datetime
 import difflib
 from functools import reduce
 import itertools as it
 from dataclasses import dataclass
 import json
 import logging
+import re
 from bs4 import BeautifulSoup
-from typing import Coroutine, Iterable, List
+from typing import Any, Coroutine, Iterable, Iterator, List, Sequence, Generator
 
 FORMAT = "%(levelname)s %(asctime)s - %(message)s"
 logging.basicConfig(
@@ -15,6 +17,8 @@ logging.basicConfig(
     format=FORMAT,
     filemode="w")
 logger = logging.getLogger()
+
+REQUIRED_DATE_FORMAT = r"%A %B %d %Y"
 
 
 def file_handler(file, mode="r", text=None, relative=False):
@@ -45,7 +49,7 @@ class Announcement:
     subject_type = None
     deadline = None
     links = None
-    timedelta = None
+    time_delta = None
 
 
 @dataclass
@@ -63,8 +67,7 @@ class UnexpectedBehaviourError(Exception):
     """
 
     def __init__(self, message, custom_object) -> None:
-        self.message = self.failed_function_hook(message, custom_object)
-        super().__init__(message=self.message)
+        self.failed_function_hook(message, custom_object)
 
     def failed_function_hook(self, message, custom_object):
         if custom_object:
@@ -75,22 +78,85 @@ class WebsiteMeta:
     file = file_handler("creds.txt")
     file = file.split("\n")
     username, password, api_key, public_context, testing_chat_context = file
-    blacklist = {}
 
 
 class NullValueError(Exception):
-    def __init__(self, message=None, *args: List[tuple]) -> None:
+    def __init__(self, message=None, *args: Iterable[tuple[str, Any]]) -> None:
         self.args = args
         default_message = "\n".join(
             f"{name} -> {value}" for name, value in self.args)
         self.message = bool_return(message, default=default_message)
-        super().__init__(message=self.message)
 
 
-def matches(T, item) -> bool:
+def iterate_over_iterable(T: Iterable):
     for i in T:
-        if i == item:
-            return True
+        print(i)
+
+
+def flattening_iterator(*args: Sequence[Iterable]) -> Generator[Any, None, None]:
+    for i in args:
+        for j in i:
+            # includes generators and iterators as well
+            if not isinstance(j, str) and hasattr(j, "__iter__"):
+                yield from j
+            else:
+                yield j
+
+
+def get_sequence_or_item(sequence):
+    if sequence:
+        is_item = len(sequence) == 1
+        if is_item:
+            return sequence[0]
+        return sequence
+
+
+def string_builder(strings: Iterable, prefixes: Iterable,
+                   separator: str = "\n") -> str:
+    """
+    Builds a string incrementally until it reaches a breakpoint (a field is missing)
+    """
+    def built_strings():
+        for string, prefix in zip(strings, prefixes):
+            if string and prefix:
+                yield f"{prefix} : {string}"
+    return separator.join(filter(None, built_strings()))
+
+
+def not_singleton(T):
+    if not hasattr(T, "__iter__"):
+        return False
+    iterator = iter(T)
+    _, second = (next(iterator, None), next(iterator, None))
+    if not second:
+        return False
+    return True
+
+
+def safe_next(iterator_or_gen):
+    return next(iterator_or_gen, None)
+
+
+def safe_next_chaining(iterator_or_gen, attr):
+    return null_safe_chaining(safe_next(iterator_or_gen), attr)
+
+
+def date_calculator(date_string: str) -> datetime:
+    """
+    Return a datetime object, assuming the date to be parsed will always be in the same month.
+    """
+    def transform(x):
+        if x == "mins":
+            x = "minute"
+        else:
+            x = x[:-1]
+        return x
+    parts = date_string.split(" ")
+    first_time, first_unit, second_time, second_unit = parts[:-1]
+    first_unit, second_unit = (transform(i) for i in (first_unit, second_unit))
+    sad = { first_unit: int(first_time), second_unit: int(second_time)}
+
+    return datetime.now().replace(**sad)
 
 
 def value_verifier(func):
@@ -133,10 +199,14 @@ def gen_exec(gen):
 
 
 def clean_iter(T: Iterable, out_iter=list):
-    cleaned = filter(None, T)
+    cleaned: filter = filter(None, T)
     if out_iter is None:
         return cleaned
     return out_iter(cleaned)
+
+
+def combine(*iterables: Sequence[Iterable], out_iter=tuple) -> Iterable:
+    return flatten_iter(it.chain(iterables), out_iter=out_iter)
 
 
 def bool_return(thing, default=None):
@@ -163,10 +233,19 @@ def null_safe(*args: Iterable, mode="list"):
         none_args = modes[mode](*args)
 
     except KeyError:
-        raise UnexpectedBehaviourError("Invalid null safety mode specified")
+        raise UnexpectedBehaviourError(
+            "Invalid null safety mode specified", null_safe)
 
     if none_args:
-        raise UnexpectedBehaviourError(f"None found in {args}")
+        raise UnexpectedBehaviourError(f"None found in {args}", null_safe)
+
+
+def null_safe_chaining(_object, attribute, default=None):
+    try:
+        return getattr(_object, attribute)
+
+    except AttributeError:
+        return default
 
 
 def coerce_to_none(*args):
@@ -218,6 +297,17 @@ def infinite_conditional(*args):
                 return arg[-1]()
 
 
+def checker_factory(lower, upper):
+    def _inner(item):
+        try:
+            if lower <= item <= upper:
+                return True
+            return False
+        except TypeError:
+            return False
+    return _inner
+
+
 def map_aliases(name: str):
     if "_" in name:
         aliases = (name, name.split("_")[1], chr(
@@ -258,7 +348,9 @@ def run(x: Coroutine): return asyncio.run(x)
 def soup_bowl(html): return BeautifulSoup(html, "lxml")
 
 
-def load_json_file(file): return json.load(open(file))
+def load_json_file(file):
+    with open(file) as f:
+        return json.load(f)
 
 
 def notifications_wrapper() -> List[dict]:
