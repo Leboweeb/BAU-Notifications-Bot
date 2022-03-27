@@ -128,3 +128,4 @@ textfile/
 *env*
 *.html
 bot_setup.py
+.lcov

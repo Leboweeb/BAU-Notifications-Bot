@@ -7,7 +7,7 @@ import re
 from typing import AsyncGenerator, Iterable, List, Sequence, Tuple
 import httpx
 import datefinder
-from utilities.common import REQUIRED_DATE_FORMAT, Announcement, Assignment, add_cookies_to_header, bool_return, clean_iter, coerce_to_none, combine, courses_wrapper, css_selector, file_handler, flatten_iter, flattening_iterator, not_singleton, json, my_format, get_sequence_or_item, null_safe_chaining, safe_next, soup_bowl, url_encode
+from utilities.common import REQUIRED_DATE_FORMAT, Announcement, Assignment, add_cookies_to_header, bool_return, clean_iter, coerce_to_none, combine, courses_wrapper, css_selector, file_handler, flatten_iter, flattening_iterator, gen_exec, has_required_format, not_singleton, json, my_format, get_sequence_or_item, null_safe_chaining, safe_next, soup_bowl, url_encode
 
 
 @dataclass(frozen=True)
@@ -75,17 +75,6 @@ async def get_data(dicts: list[dict]) -> List[Announcement]:
 
         except (KeyError, IndexError):
             announcement.subject_type = None
-
-        def has_required_format(collection: tuple) -> bool:
-            DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",
-                                                                                                            "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "Decmeber")
-
-            def abbreviate(x): return x[:3]
-            day_abbr, mon_abbr = (map(abbreviate, i) for i in (DAYS, MONTHS))
-            _, string = collection
-            DATE_WORDS = combine(DAYS, MONTHS, day_abbr, mon_abbr)
-            cond = re.findall("|".join(DATE_WORDS), string, re.IGNORECASE)
-            return bool(cond)
 
         try:
             fuzzy_date = safe_next(
@@ -173,15 +162,14 @@ useful for making arbitrary requests to it.
 
 async def prep_courses():
     courses = courses_wrapper()
-    fields = ("fullname", "viewurl")
 
-    async def course_generator(T: List[dict], fields):
+    async def course_generator(T: List[dict[str:str]]):
         def testing_predicate(
             i): return 0 < i["progress"] < 100 or i["fullname"] == "Electricity and Magnetism"
         for i in T:
             if testing_predicate(i):
-                yield Course(*[i.get(f) for f in fields])
-    return {i async for i in course_generator(courses, fields)}
+                yield Course(i["fullname"], i["viewurl"])
+    return {i async for i in course_generator(courses)}
 
 
 @ authenticate
@@ -251,7 +239,8 @@ async def find_assignments(cookies, Client: httpx.AsyncClient) -> Tuple[Assignme
         deadline = await find_deadline(submission_table)
         refrence_material, submission_link, deadline = tuple(
             coerce_to_none(refrence_material, submission_link, deadline))
-        await collect_tasks(collection=(setattr(assignment, i, j) for i, j in zip(("submission_link", "refrence_material", "deadline"), (refrence_material, submission_link, deadline))))
+        for i, j in zip(("submission_link", "refrence_material", "deadline"), (refrence_material, submission_link, deadline)):
+            setattr(assignment, i, j)
 
     assignments = await collect_tasks(create_assignments, courses)
     await collect_tasks(find_from_link, assignments)

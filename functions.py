@@ -10,7 +10,8 @@ def notification_message_builder(
     strings = [getattr(notification, attr)
                for attr in attrs]
     prefixes = [i.capitalize() for i in attrs]
-    strings.append(notification.time_created), prefixes.append("Time created")
+    strings.append(notification.time_created)
+    prefixes.append("Time created")
     if custom_message:
         strings[2] = custom_message
 

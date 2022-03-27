@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 from datetime import datetime
 import difflib
@@ -7,8 +8,9 @@ from dataclasses import dataclass
 import json
 import logging
 import re
+from types import FunctionType
 from bs4 import BeautifulSoup
-from typing import Any, Coroutine, Iterable, Iterator, List, Sequence, Generator
+from typing import Any, Callable, Coroutine, Iterable, Iterator, List, Generator, Sequence, TypeVar
 
 FORMAT = "%(levelname)s %(asctime)s - %(message)s"
 logging.basicConfig(
@@ -19,6 +21,8 @@ logging.basicConfig(
 logger = logging.getLogger()
 
 REQUIRED_DATE_FORMAT = r"%A %B %d %Y"
+
+NOT_STRING = TypeVar("NOT_STRING", list, dict, set, tuple)
 
 
 def file_handler(file, mode="r", text=None, relative=False):
@@ -66,12 +70,17 @@ class UnexpectedBehaviourError(Exception):
     A custom error class to show which function failed at runtime.
     """
 
-    def __init__(self, message, custom_object) -> None:
-        self.failed_function_hook(message, custom_object)
+    @staticmethod
+    def color_message(message):
+        return f"\x1B[38;5;214m{message}\x1b[0m"
 
-    def failed_function_hook(self, message, custom_object):
-        if custom_object:
-            self.message = f" function : {custom_object.__name__} failed \n message : {message}"
+    def __init__(self, message, custom_object) -> None:
+        self.message = self.color_message(
+            f" function : {custom_object.__name__} failed ; error message : {message}")
+        super().__init__(self.message)
+
+    def __str__(self) -> str:
+        return self.message
 
 
 class WebsiteMeta:
@@ -81,11 +90,15 @@ class WebsiteMeta:
 
 
 class NullValueError(Exception):
-    def __init__(self, message=None, *args: Iterable[tuple[str, Any]]) -> None:
+    def __init__(self, message=None, *args: Iterable[Any]) -> None:
         self.args = args
         default_message = "\n".join(
             f"{name} -> {value}" for name, value in self.args)
         self.message = bool_return(message, default=default_message)
+        super().__init__(self.message)
+
+    def __str__(self) -> str:
+        return self.message
 
 
 def iterate_over_iterable(T: Iterable):
@@ -93,17 +106,54 @@ def iterate_over_iterable(T: Iterable):
         print(i)
 
 
-def flattening_iterator(*args: Sequence[Iterable]) -> Generator[Any, None, None]:
-    for i in args:
-        for j in i:
+def iter_found_match(pattern: str, string: str) -> bool:
+    return bool(safe_next(re.finditer(fr"{pattern}", string)))
+
+
+def error_if_not_iterable(thing, message, obj):
+    try:
+        thing[0]
+    except TypeError:
+        raise UnexpectedBehaviourError(message, obj)
+
+
+def flattening_iterator(*args: Iterable[Any]) -> Generator[Any, None, None]:
+    def single_iterable(T: Iterable):
+        for i in T:
             # includes generators and iterators as well
-            if not isinstance(j, str) and hasattr(j, "__iter__"):
-                yield from j
+            if not isinstance(i, str) and hasattr(i, "__iter__"):
+                yield from i
             else:
-                yield j
+                yield i
+    error_if_not_iterable(
+        args, "Expected iterable or iterator", flattening_iterator)
+    for i in args:
+        yield from single_iterable(i)
 
 
-def get_sequence_or_item(sequence):
+def repeat(obj: Any, n: int):
+    for _ in range(n):
+        yield obj
+
+
+def func_chainer(funcs: tuple[FunctionType], *args: Iterable[Any]) -> Any:
+    # chain a bunch of functions, assuming they all have the same argument(s).
+    try:
+        funcs[0]
+    except TypeError:
+        raise UnexpectedBehaviourError(
+            "Need more than one function to chain", func_chainer)
+    result = args[0]
+
+    def caller(func: FunctionType, *function_args):
+        return func(*function_args)
+    for i in funcs:
+        result = caller(i, result)
+
+    return result
+
+
+def get_sequence_or_item(sequence: Sequence):
     if sequence:
         is_item = len(sequence) == 1
         if is_item:
@@ -123,7 +173,7 @@ def string_builder(strings: Iterable, prefixes: Iterable,
     return separator.join(filter(None, built_strings()))
 
 
-def not_singleton(T):
+def not_singleton(T: Iterable):
     if not hasattr(T, "__iter__"):
         return False
     iterator = iter(T)
@@ -133,30 +183,72 @@ def not_singleton(T):
     return True
 
 
-def safe_next(iterator_or_gen):
-    return next(iterator_or_gen, None)
+def safe_next(iterator_or_gen: Iterator | Generator):
+    if hasattr(iterator_or_gen, "__iter__"):
+        return next(iterator_or_gen, None)
 
 
 def safe_next_chaining(iterator_or_gen, attr):
     return null_safe_chaining(safe_next(iterator_or_gen), attr)
 
 
-def date_calculator(date_string: str) -> datetime:
-    """
-    Return a datetime object, assuming the date to be parsed will always be in the same month.
-    """
-    def transform(x):
-        if x == "mins":
-            x = "minute"
-        else:
-            x = x[:-1]
-        return x
-    parts = date_string.split(" ")
-    first_time, first_unit, second_time, second_unit = parts[:-1]
-    first_unit, second_unit = (transform(i) for i in (first_unit, second_unit))
-    sad = { first_unit: int(first_time), second_unit: int(second_time)}
+class RelativeDates:
+    ANCHORS = ("next", "last", "before", "after")
+    temp = ("today", "tomorrow", "day", "week",
+            "month", "year", "decade", "century", 'days', 'weeks', 'months', 'years', 'decades', 'centuries')
+    DATE_WORDS: dict[str, str] = dict(
+        zip(temp[8:], temp[2:8])) | {i: i for i in temp[2:8]}
 
-    return datetime.now().replace(**sad)
+    def __init__(self, string: str, anchor : datetime = datetime.now()) -> None:
+        self.string = string
+        self.mode = self.mode_factory()
+        self.anchor = anchor
+
+    class DateCopy:
+        def __init__(self, datetime: datetime = datetime.now()) -> None:
+            ALL_ATTRS = ("hour", "day", "month", "year")
+            self.date = datetime
+            self.weekday = self.date.weekday()
+            self.minute, self.hour, self.day, self.month, self.year = {
+                getattr(self.date, i, None) for i in ALL_ATTRS}
+
+        def transform_copy(self):
+            return datetime(self.year, self.month, self.day, self.hour, self.minute)
+
+    def find_relative_dates(self, string: str):
+
+        string = re.sub(r"[^a-zA-Z0-9\s]", "", string)
+
+        class Proxy:
+            pass
+        if iter_found_match("\d+ \w+", string):
+            p, split = Proxy(), string.split(" ")
+            for i, j in enumerate(split):
+                if j.isdigit() and split[i + 1] in RelativeDates.DATE_WORDS:
+                    # p.__dict__ has type dict[str, int]
+                    setattr(p, RelativeDates.DATE_WORDS[split[i + 1]], int(j))
+            subtract_dict: dict[str, int] = {word: getattr(
+                self.anchor, word) - value for word, value in p.__dict__.items()}
+            return self.anchor.replace(**subtract_dict, tzinfo=None)
+
+    def parse_number_mode(self) -> str | None:
+        potential_date: Callable[[str], str] | None = null_safe_chaining(
+            self.find_relative_dates(self.string), "strftime")
+        if potential_date:
+            return potential_date(REQUIRED_DATE_FORMAT)
+        return None
+
+    def natural_language_mode(self) -> datetime | None:
+        POSITIVE_OFFSETS, NEGATIVE_OFFSETS = (
+            ("next", "after", "this"), ("ago", "before", "last"))
+        ...
+
+
+    def mode_factory(self):
+        if iter_found_match("\d+", self.string):
+            return self.parse_number_mode
+        else:
+            return self.natural_language_mode
 
 
 def value_verifier(func):
@@ -179,14 +271,11 @@ def is_similar(first, second, ratio):
     return difflib.SequenceMatcher(None, first, second).quick_ratio() >= ratio
 
 
-def flatten_iter(T, out_iter=tuple) -> Iterable:
-    try:
-        if out_iter:
-            return out_iter(it.chain.from_iterable(T))
-        elif out_iter is None:
-            return it.chain.from_iterable(T)
-    except TypeError:
-        return T
+def flatten_iter(T: Iterable, out_iter=tuple) -> Iterable:
+    generator = flattening_iterator(T)
+    if not out_iter:
+        return generator
+    return out_iter(generator)
 
 
 def gen_exec(gen):
@@ -205,8 +294,19 @@ def clean_iter(T: Iterable, out_iter=list):
     return out_iter(cleaned)
 
 
-def combine(*iterables: Sequence[Iterable], out_iter=tuple) -> Iterable:
+def combine(*iterables: Iterable, out_iter=tuple) -> Iterable:
     return flatten_iter(it.chain(iterables), out_iter=out_iter)
+
+
+def has_required_format(collection: tuple) -> bool:
+    def abbreviate(x): return x[:3]
+    DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",
+                                                                                                    "February", "March", "April", "June", "July", "August", "September", "October", "November", "December")
+    day_abbr, mon_abbr = (map(abbreviate, i) for i in (DAYS, MONTHS))
+    _, string = collection
+    DATE_WORDS = combine(DAYS, MONTHS, day_abbr, mon_abbr)
+    cond = re.findall("|".join(DATE_WORDS), string, re.IGNORECASE)
+    return bool(cond)
 
 
 def bool_return(thing, default=None):
@@ -267,7 +367,7 @@ def matches_attribute(T, attr, value, get_back=False):
     return False
 
 
-def pad_iter(iterable: Iterable, items: Iterable, amount=None) -> tuple:
+def pad_iter(iterable: Iterable, items: Any, amount=None) -> tuple:
     padding = [items] * amount if amount else items
     if not hasattr(iterable, "__iter__") or isinstance(iterable, str):
         iterable = (iterable,)
@@ -297,7 +397,7 @@ def infinite_conditional(*args):
                 return arg[-1]()
 
 
-def checker_factory(lower, upper):
+def checker_factory(lower: int, upper: int):
     def _inner(item):
         try:
             if lower <= item <= upper:
@@ -310,7 +410,7 @@ def checker_factory(lower, upper):
 
 def map_aliases(name: str):
     if "_" in name:
-        aliases = (name, name.split("_")[1], chr(
+        aliases: tuple[str, ...] = (name, name.split("_")[1], chr(
             min(ord(name.split("_")[1][0]), ord(name[0]))))
     else:
         aliases = (name, name[0])
