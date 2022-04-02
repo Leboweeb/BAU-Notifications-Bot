@@ -153,7 +153,7 @@ async def main():
         return required_json
     
 
-    notifications, courses = await asyncio.gather(asyncio.ensure_future(get_notifications()), asyncio.ensure_future(get_courses()))
+    notifications, courses = await asyncio.gather(get_notifications(),get_courses())
     for i in (notifications, courses):
         assert type(i) != dict
 
