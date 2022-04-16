@@ -129,3 +129,4 @@ textfile/
 *.html
 bot_setup.py
 .lcov
+scratch_files

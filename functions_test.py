@@ -4,7 +4,8 @@ import unittest
 from functions import TelegramInterface
 from idle import autoremind_worker, filter_by_type_worker, search_notifications
 from utilities.async_functions import prep_courses, datefinder
-from utilities.common import coerce_to_none, flattening_iterator, my_format, pad_iter, run, RelativeDates
+from utilities.common import coerce_to_none, flattening_iterator, my_format, pad_iter, run
+from utilities.time_parsing_lib import RelativeDates
 
 
 def begin_test(obj: unittest.TestCase, cases: list, assertions: tuple, function: FunctionType = None, messages=None):
@@ -56,11 +57,12 @@ class SanityChecks(unittest.TestCase):
 
     def test_date_calculator(self):
         def test_relative_date_mode():
-            cases = tuple(RelativeDates(i, datetime(2022, 3 , 25 ) ).parse_number_mode() for i in ("1 day ago", "1 year ago", "2 months ago",
-                                                                         "", "1", "1234411 ; ';' ;''''", "___________"))
+            anc = datetime(2022, 3, 25)
+            cases = tuple(RelativeDates(string=i, anchor=anc).parse_number_mode() for i in ("1 day ago", "1 year ago", "2 months ago", "1 week, 1 day ago", "1 week ,  1 day ago , and 1 month", "1 century ago", "1 decade ago"
+                                                                                            "", "1", "1234411 ; ';' ;''''", "___________"))
             begin_test(self, cases,
-                       ("Thursday March 24 2022", "Thursday March 25 2021",
-                        "Tuesday January 25 2022",  None, None, None, None),
+                       ("Thursday March 24 2022", "Thursday March 25 2021",  "Tuesday January 25 2022",
+                        "Thursday March 17 2022", "Thursday February 17 2022", "Saturday March 25 1922" ,  "Sunday March 25 2012", None, None, None, None),
                        messages=tuple(f"Case {i}" for i in range(len(cases))),
                        )
         test_relative_date_mode()

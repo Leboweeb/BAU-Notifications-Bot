@@ -5,7 +5,8 @@ import endpoint
 
 def main():
     with cProfile.Profile() as pr:
-        asyncio.run(endpoint.main())
+        # do something here
+        pass
     
     with open("stats.txt", "w") as s:
         stats = pstats.Stats(pr, stream= s)

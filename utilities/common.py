@@ -1,20 +1,24 @@
 from __future__ import annotations
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import difflib
 from functools import reduce
 import itertools as it
 from dataclasses import dataclass
 import json
 import logging
+import pathlib
 import re
 from types import FunctionType
 from bs4 import BeautifulSoup
-from typing import Any, Callable, Coroutine, Iterable, Iterator, List, Generator, Sequence, TypeVar
+from typing import Any, Coroutine, Iterable, Iterator, List, Generator, Sequence, TypeVar
+
+DATA_DIR = pathlib.Path("./bot_data_stuff").resolve()
+
 
 FORMAT = "%(levelname)s %(asctime)s - %(message)s"
 logging.basicConfig(
-    filename="logs.log",
+    filename=fr"{DATA_DIR}/logs.log",
     level=logging.DEBUG,
     format=FORMAT,
     filemode="w")
@@ -25,9 +29,15 @@ REQUIRED_DATE_FORMAT = r"%A %B %d %Y"
 NOT_STRING = TypeVar("NOT_STRING", list, dict, set, tuple)
 
 
-def file_handler(file, mode="r", text=None, relative=False):
-    try:
-        if file is not None:
+def file_handler(relative_path: pathlib.Path | None = None):
+    def read_write_handler(file: str, mode="r", text: str | None = None):
+        try:
+            if relative_path:
+                file = str(relative_path.joinpath(file).resolve())
+            elif file is None:
+                raise UnexpectedBehaviourError(
+                    "expected a file argument", file_handler)
+
             def _read_file():
                 with open(file) as f:
                     res = f.read()
@@ -36,11 +46,15 @@ def file_handler(file, mode="r", text=None, relative=False):
             def _write_to_file():
                 with open(file, mode) as f:
                     f.write(text)
-        mode_dict = {"r": _read_file, "w": _write_to_file, "x": _write_to_file}
-        return mode_dict[mode]()
-    except KeyError:
-        raise NotImplementedError(
-            "This function only accepts reading and writing modes as of now.")
+            mode_dict = {"r": _read_file,
+                         "w": _write_to_file, "x": _write_to_file}
+            return mode_dict[mode]()
+        except KeyError:
+            raise NotImplementedError(
+                "This function only accepts reading and writing modes as of now.")
+    return read_write_handler
+
+data_dir_io = file_handler(DATA_DIR)
 
 
 @dataclass
@@ -84,7 +98,7 @@ class UnexpectedBehaviourError(Exception):
 
 
 class WebsiteMeta:
-    file = file_handler("creds.txt")
+    file = data_dir_io("creds.txt")
     file = file.split("\n")
     username, password, api_key, public_context, testing_chat_context = file
 
@@ -104,10 +118,6 @@ class NullValueError(Exception):
 def iterate_over_iterable(T: Iterable):
     for i in T:
         print(i)
-
-
-def iter_found_match(pattern: str, string: str) -> bool:
-    return bool(safe_next(re.finditer(fr"{pattern}", string)))
 
 
 def error_if_not_iterable(thing, message, obj):
@@ -192,65 +202,6 @@ def safe_next_chaining(iterator_or_gen, attr):
     return null_safe_chaining(safe_next(iterator_or_gen), attr)
 
 
-class RelativeDates:
-    ANCHORS = ("next", "last", "before", "after")
-    temp = ("today", "tomorrow", "day", "week",
-            "month", "year", "decade", "century", 'days', 'weeks', 'months', 'years', 'decades', 'centuries')
-    DATE_WORDS: dict[str, str] = dict(
-        zip(temp[8:], temp[2:8])) | {i: i for i in temp[2:8]}
-
-    def __init__(self, string: str, anchor : datetime = datetime.now()) -> None:
-        self.string = string
-        self.mode = self.mode_factory()
-        self.anchor = anchor
-
-    class DateCopy:
-        def __init__(self, datetime: datetime = datetime.now()) -> None:
-            ALL_ATTRS = ("hour", "day", "month", "year")
-            self.date = datetime
-            self.weekday = self.date.weekday()
-            self.minute, self.hour, self.day, self.month, self.year = {
-                getattr(self.date, i, None) for i in ALL_ATTRS}
-
-        def transform_copy(self):
-            return datetime(self.year, self.month, self.day, self.hour, self.minute)
-
-    def find_relative_dates(self, string: str):
-
-        string = re.sub(r"[^a-zA-Z0-9\s]", "", string)
-
-        class Proxy:
-            pass
-        if iter_found_match("\d+ \w+", string):
-            p, split = Proxy(), string.split(" ")
-            for i, j in enumerate(split):
-                if j.isdigit() and split[i + 1] in RelativeDates.DATE_WORDS:
-                    # p.__dict__ has type dict[str, int]
-                    setattr(p, RelativeDates.DATE_WORDS[split[i + 1]], int(j))
-            subtract_dict: dict[str, int] = {word: getattr(
-                self.anchor, word) - value for word, value in p.__dict__.items()}
-            return self.anchor.replace(**subtract_dict, tzinfo=None)
-
-    def parse_number_mode(self) -> str | None:
-        potential_date: Callable[[str], str] | None = null_safe_chaining(
-            self.find_relative_dates(self.string), "strftime")
-        if potential_date:
-            return potential_date(REQUIRED_DATE_FORMAT)
-        return None
-
-    def natural_language_mode(self) -> datetime | None:
-        POSITIVE_OFFSETS, NEGATIVE_OFFSETS = (
-            ("next", "after", "this"), ("ago", "before", "last"))
-        ...
-
-
-    def mode_factory(self):
-        if iter_found_match("\d+", self.string):
-            return self.parse_number_mode
-        else:
-            return self.natural_language_mode
-
-
 def value_verifier(func):
 
     def wrapper(*args):
@@ -265,6 +216,10 @@ def my_format(item, description=None, level=logging.info):
     if description is not None:
         return level(f"{description}: {item}")
     return level(f"{item}")
+
+
+def humanize_date(dt: datetime) -> str:
+    return dt.strftime(REQUIRED_DATE_FORMAT)
 
 
 def is_similar(first, second, ratio):
@@ -298,14 +253,14 @@ def combine(*iterables: Iterable, out_iter=tuple) -> Iterable:
     return flatten_iter(it.chain(iterables), out_iter=out_iter)
 
 
-def has_required_format(collection: tuple) -> bool:
+def has_required_format(collection: tuple[datetime, str]) -> bool:
     def abbreviate(x): return x[:3]
     DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",
                                                                                                     "February", "March", "April", "June", "July", "August", "September", "October", "November", "December")
     day_abbr, mon_abbr = (map(abbreviate, i) for i in (DAYS, MONTHS))
     _, string = collection
     DATE_WORDS = combine(DAYS, MONTHS, day_abbr, mon_abbr)
-    cond = re.findall("|".join(DATE_WORDS), string, re.IGNORECASE)
+    cond = re.search("|".join(DATE_WORDS), string, re.IGNORECASE)
     return bool(cond)
 
 
@@ -448,18 +403,18 @@ def run(x: Coroutine): return asyncio.run(x)
 def soup_bowl(html): return BeautifulSoup(html, "lxml")
 
 
-def load_json_file(file):
-    with open(file) as f:
-        return json.load(f)
+
+def links_and_meetings_wrapper() -> dict[str, list[str]]:
+    return data_dir_io("links_and_meetings.json")
 
 
 def notifications_wrapper() -> List[dict]:
-    data = load_json_file("results.json")[0]["data"]["notifications"]
-    return data
+    data = data_dir_io("results.json")[0]["data"]["notifications"]
+    return json.loads(data)
 
 
 def courses_wrapper() -> List[dict]:
-    return load_json_file("courses.json")[0]["data"]["courses"]
+    return json.loads(data_dir_io("courses.json")[0]["data"]["courses"])
 
 
 def insert_into_dict(dictionary, index, pair) -> dict:

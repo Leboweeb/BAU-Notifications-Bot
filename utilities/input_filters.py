@@ -2,7 +2,7 @@ from collections import Counter
 import html
 from typing import List
 from utilities.async_functions import all_notifications, re
-from utilities.common import Announcement, file_handler, gen_exec, is_similar, clean_iter, json, notifications_wrapper
+from utilities.common import Announcement, courses_wrapper, data_dir_io , gen_exec, is_similar, clean_iter, json, notifications_wrapper
 
 
 ALL_NOTIFICATIONS = all_notifications(notifications_wrapper())
@@ -60,18 +60,17 @@ def update_links(Announcements: List[Announcement]):
     links_dict = {
         announcement.subject: announcement.links
         for announcement in Announcements}
-    file_handler("links_and_meetings.json", "w", json.dumps(
+    data_dir_io("links_and_meetings.json", "w", json.dumps(
         links_dict, indent=4)) if links_dict else None
 
 
 def mapping_init():
-    file_handler("mappings.json", "w", "")
-    res = file_handler("courses.json")
-    data = json.loads(res)[0]["data"]["courses"]
-    data = [i for i in data]
+    data_dir_io("mappings.json", "w", "")
+    data = courses_wrapper()
+    data = (i for i in data)
     mappings = {item["shortname"]: html.unescape(
         item["fullname"]).split("-")[0] for item in data}
-    file_handler("mappings.json", "w", json.dumps(mappings, indent=4))
+    data_dir_io("mappings.json", "w", json.dumps(mappings, indent=4))
 
 
 def notification_cleanup(res: List[Announcement]) -> List[Announcement]:

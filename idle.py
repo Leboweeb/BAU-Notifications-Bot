@@ -3,11 +3,12 @@ Bot listens to commands here.
 """
 from datetime import datetime
 import os
+from typing import Any, cast
 import telebot
 from datefinder import find_dates
 from concurrent.futures import ThreadPoolExecutor
 from functions import TelegramInterface, notification_message_builder, search_notifications
-from utilities.common import autocorrect, checker_factory, file_handler, flatten_iter, WebsiteMeta, null_safe_chaining, safe_next
+from utilities.common import autocorrect, checker_factory, flatten_iter, WebsiteMeta, null_safe_chaining, safe_next, data_dir_io
 
 api_key, chat_id = WebsiteMeta.api_key, WebsiteMeta.public_context
 
@@ -26,11 +27,8 @@ Hello ! To start using me, simply write a command in plain text and I will do my
 
 """
 
-exam_types = ["quiz", "test", "exam", "grades", "exams", "quizzes", "tests"]
-non_exam_types = [("lab", "lab"), ("labs", "lab"),
-                  ("project", "project"), ("project", "projects"), ("projects", "projects")]
-exam_types = {name: "exam" for name in exam_types}
-non_exam_types = dict(non_exam_types)
+exam_types : dict[str,str] =  dict.fromkeys(("quiz", "test", "exam", "grades", "exams", "quizzes", "tests"), "exam") 
+non_exam_types = dict.fromkeys(("lab", "labs"), "lab") | dict.fromkeys(("project", "projects"), "project")
 overall_types = exam_types | non_exam_types
 
 
@@ -106,15 +104,13 @@ def get_chat_id(message):
 
 
 def map_aliases(name: str):
-    default_aliases = [name, name[0]]
+    default_aliases : tuple[str,...] = (name, name[0])
     aliases = default_aliases
     if "_" in name:
         split = name.split("_")
         if len(split) == 2:
             aliases = (name, split[1], chr(
                 min(ord(split[1][0]), ord(name[0]))))
-        else:
-            aliases.append(split[0])
 
     return {alias: name for alias in aliases}
 
@@ -135,12 +131,14 @@ except (KeyError, FileNotFoundError):
 
 
 class BotCommands:
+    commands : list[str]
+    aliases : dict[str, str]
     def __init__(self) -> None:
+        BotCommands.commands = [func for func in dir(BotCommands) if callable(
+        getattr(BotCommands, func)) and not func.startswith("__")]
         self.last_command = None
         self.last_argument = ""
         self.interactive = False
-        BotCommands.commands = [func for func in dir(BotCommands) if callable(
-            getattr(BotCommands, func)) and not func.startswith("__")]
         BotCommands.aliases = {}
         aliases_dict = [map_aliases(name) for name in BotCommands.commands]
         for alias in aliases_dict:
@@ -154,7 +152,7 @@ class BotCommands:
         interface.update_links_and_meetings()
         with open("links_and_meetings.json") as f:
             string_to_be_processed = f.read()
-        file_handler("links_and_meetings.txt", "w", string_to_be_processed)
+        data_dir_io("links_and_meetings.txt", "w", string_to_be_processed)
         bot.send_document(chat_id, document=open(
             "links_and_meetings.txt", "rb"))
 

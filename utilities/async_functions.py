@@ -4,10 +4,10 @@ import itertools as it
 from datetime import datetime
 import asyncio
 import re
-from typing import AsyncGenerator, Iterable, List, Sequence, Tuple
+from typing import AsyncGenerator, Generator, List, Tuple
 import httpx
 import datefinder
-from utilities.common import REQUIRED_DATE_FORMAT, Announcement, Assignment, add_cookies_to_header, bool_return, clean_iter, coerce_to_none, combine, courses_wrapper, css_selector, file_handler, flatten_iter, flattening_iterator, gen_exec, has_required_format, not_singleton, json, my_format, get_sequence_or_item, null_safe_chaining, safe_next, soup_bowl, url_encode
+from utilities.common import REQUIRED_DATE_FORMAT, Announcement, Assignment, WebsiteMeta, add_cookies_to_header, clean_iter, coerce_to_none, courses_wrapper, css_selector, file_handler, has_required_format, not_singleton, json, my_format, get_sequence_or_item, safe_next, soup_bowl, url_encode
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,14 @@ async def async_filter(async_pred, iterable) -> AsyncGenerator:
         if should_yield:
             yield item
 
+
+async def relative_time_dt(gen : Generator) -> int:
+    found_explicit_date, found_implicit_date = False, False
+    for i in gen:
+        pass
+    return 0
+
+        
 
 async def get_data(dicts: list[dict]) -> List[Announcement]:
     objects = [i for i in dicts]
@@ -145,9 +153,7 @@ useful for making arbitrary requests to it.
             page = await Client.get(url=LOGIN_URL)
             execution = css_selector(
                 page.text, "[name=execution]", "value")
-            if (b := file_handler("creds.txt")):
-                b = b.split("\n")
-                username, password = b[:2]
+            username, password = WebsiteMeta.username, WebsiteMeta.password
             encoded = url_encode(
                 {"username": username, "password": password,
                  "execution": fr"{execution}", "_eventId": "submit",

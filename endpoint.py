@@ -6,7 +6,7 @@ THIS MODULE IS NOT ALLOWED TO BE IMPORTED BY OTHER MODULES !!!!!!!!
 import asyncio
 from typing import Union
 import httpx
-from utilities.common import add_cookies_to_header, file_handler, my_format, css_selector, url_encode, soup_bowl, json, WebsiteMeta
+from utilities.common import add_cookies_to_header, data_dir_io, my_format, css_selector, url_encode, soup_bowl, json, WebsiteMeta
 
 LOGIN_URL = r"https://icas.bau.edu.lb:8443/cas/login?service=https%3A%2F%2Fmoodle.bau.edu.lb%2Flogin%2Findex.php"
 SECURE_URL = r"https://moodle.bau.edu.lb/my/"
@@ -135,7 +135,7 @@ async def main():
                                           json=api_payload,
                                           params=api_querystring
                                           )
-        file_handler("results.json", "w", text=json.dumps(
+        data_dir_io("results.json", "w", text=json.dumps(
             api_response.json(), indent=4))
         return api_response.json()
 
@@ -148,7 +148,7 @@ async def main():
                                      params=courses_querystring)
         required_json = courses.json()
         if required_json:
-            file_handler("courses.json", "w",
+            data_dir_io("courses.json", "w",
                          json.dumps(required_json, indent=4))
         return required_json
     

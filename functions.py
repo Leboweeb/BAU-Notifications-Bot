@@ -1,6 +1,6 @@
 from functools import reduce
 from typing import Iterable
-from utilities.common import Announcement, bool_return, clean_iter, flatten_iter, file_handler, json, autocorrect, string_builder
+from utilities.common import Announcement, bool_return, clean_iter, flatten_iter, json, autocorrect, string_builder, data_dir_io
 from utilities.input_filters import notification_cleanup, ALL_NOTIFICATIONS
 
 
@@ -61,13 +61,13 @@ class TelegramInterface:
         self.unfiltered_notifications = ALL_NOTIFICATIONS
         self.notifications = notification_cleanup(
             self.unfiltered_notifications)
-        self.course_mappings_dict = json.loads(file_handler("mappings.json"))
+        self.course_mappings_dict = json.loads(data_dir_io("mappings.json"))
         self.stripped_course_numbers = list(map(lambda x: x.split(
             "-")[0].lower(), self.course_mappings_dict.values()))
         self.update_links_and_meetings()
 
     def update_links_and_meetings(self):
-        existing_links = file_handler("links_and_meetings.json")
+        existing_links =data_dir_io("links_and_meetings.json")
         if existing_links:
             try:
                 existing_links = json.loads(existing_links)
@@ -80,7 +80,7 @@ class TelegramInterface:
         if isinstance(existing_links, dict):
             notifications |= existing_links
         notifications = json.dumps(notifications, indent=4)
-        file_handler("links_and_meetings.json", "w", notifications)
+        data_dir_io("links_and_meetings.json", "w", notifications)
 
     def get_index_from_name(self, query):
         query = query.replace(" ", "").strip()
