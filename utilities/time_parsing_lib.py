@@ -1,14 +1,120 @@
 from __future__ import annotations
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from io import BufferedReader
 import re
-from typing import Callable, Generator, Iterable, Sequence
-
-from utilities.common import REQUIRED_DATE_FORMAT, UnexpectedBehaviourError, null_safe_chaining
+import requests
+import PyPDF2
+from typing import Callable, Generator, Iterable, Optional, Sequence
+from utilities.common import DATA_DIR, IO_DATA_DIR, REQUIRED_DATE_FORMAT, UnexpectedBehaviourError, flattening_iterator, null_safe_chaining
 
 
 datetime_dict = dict[str, int]
+
+
+DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",
+                                                                                                "February", "March", "April", "June", "July", "August", "September", "October", "November", "December")
+
+
+def to_natural_str(dt: datetime): return dt.strftime("%A %B %d %Y")
+
+
+def datetime_to_dict(dt: datetime) -> datetime_dict: return {
+    "year": dt.year, "month": dt.month, "day": dt.day}
+
+
+def replace_dt_with_dict(dt: datetime, dt_dict: datetime_dict, tzinfo=None):
+    return dt.replace(**dt_dict, tzinfo=None)
+
+
+# Semester Namespace
+
+PDF_URL = r"https://mis.bau.edu.lb/web/v12/PortalAssets/Calendar.pdf"
+
+
+@dataclass
+class SemesterMetaInfo:
+    semester: str = field(init=False)
+    semester_month_dict: dict[datetime, Optional[str]] = field(init=False)
+
+
+def find_current_semester(info_obj: SemesterMetaInfo):
+    semester_months = info_obj.semester_month_dict
+    semester_list = sorted(flattening_iterator(semester_months, now))
+    return semester_months[semester_list[semester_list.index(now) - 1]]
+
+
+def find_week(info_obj: SemesterMetaInfo,  week: int = 0):
+    # find the current week if week = 0, otherwise find out when a particular week is
+    semester, semester_dict = info_obj.semester, {
+        v: k for k, v in info_obj.semester_month_dict.items()}
+    FIRST_WEEK_DATE = semester_dict[semester.capitalize()]
+    if week:
+        return to_natural_str(FIRST_WEEK_DATE + timedelta(weeks=week))
+    count, curr_dt = 0, FIRST_WEEK_DATE
+
+    def in_week(timestamp: datetime, ref: datetime):
+        def find_week(dt: datetime): return dt - timedelta(days=dt.weekday())
+        return find_week(timestamp) == find_week(ref)
+    while not in_week(curr_dt, now):
+        count += 1
+        curr_dt += timedelta(weeks=1)
+    return count
+
+
+def get_semester_dict(text: str):
+    DATE_FORMAT = fr"\d+-({'|'.join(mon_abbr)})-\d+"
+
+    def find_semester_dates():
+        return re.finditer(fr"{DATE_FORMAT}\w+(semester|session)(beginsforallfaculties|begins)", text, re.IGNORECASE)
+
+    dates = find_semester_dates()
+
+    def search_no_case(pattern: str, _string: str) -> Optional[str]: return null_safe_chaining(
+        re.search(pattern, _string, re.IGNORECASE), "group")()
+
+    semester_months: dict[datetime, Optional[str]] = {
+        datetime.strptime(re.sub(r"(fall|spring|summer)\w+", "", i.group(), flags=re.IGNORECASE),
+                          "%d-%b-%y"):  search_no_case("fall|spring|summer", i.group()) for i in dates
+    }
+    return semester_months
+
+
+def make_request():
+    pdf_req = requests.get(PDF_URL)
+    IO_DATA_DIR("smth.pdf", "wb", pdf_req.content)
+
+
+def abbreviate(x): return x[:3]
+def read_pdf(): return DATA_DIR.joinpath("smth.pdf").open("rb")
+
+
+day_abbr, mon_abbr = (map(abbreviate, i) for i in (DAYS, MONTHS))
+now = datetime(**datetime_to_dict(datetime.now()), tzinfo=None)
+
+
+def get_pdf_text(fileobj: BufferedReader):
+    text = PyPDF2.PdfFileReader(fileobj)
+    page = text.pages[0]
+    pdf_txt: str = page.extractText()
+    pdf_txt = re.sub("\s", "", pdf_txt)
+    return pdf_txt
+
+
+def set_pdf(): return get_pdf_text(read_pdf())
+
+
+pdf_text = set_pdf()
+
+meta_inf = SemesterMetaInfo()
+
+meta_inf.semester_month_dict = get_semester_dict(pdf_text)
+if max(meta_inf.semester_month_dict).year < now.year:
+    make_request()
+    pdf_text = set_pdf()
+
+meta_inf.semester = find_current_semester(meta_inf)
 
 
 class RelativeDates:

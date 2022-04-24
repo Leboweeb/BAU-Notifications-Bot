@@ -130,3 +130,4 @@ textfile/
 bot_setup.py
 .lcov
 scratch_files
+*.pdf

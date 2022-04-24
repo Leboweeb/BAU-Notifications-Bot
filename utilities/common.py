@@ -11,7 +11,7 @@ import pathlib
 import re
 from types import FunctionType
 from bs4 import BeautifulSoup
-from typing import Any, Coroutine, Iterable, Iterator, List, Generator, Sequence, TypeVar
+from typing import Any, AnyStr, Coroutine, Iterable, Iterator, List, Generator, Sequence, TypeVar
 
 DATA_DIR = pathlib.Path("./bot_data_stuff").resolve()
 
@@ -30,7 +30,7 @@ NOT_STRING = TypeVar("NOT_STRING", list, dict, set, tuple)
 
 
 def file_handler(relative_path: pathlib.Path | None = None):
-    def read_write_handler(file: str, mode="r", text: str | None = None):
+    def read_write_handler(file: str, mode="r", text: str | bytes | None = None):
         try:
             if relative_path:
                 file = str(relative_path.joinpath(file).resolve())
@@ -47,14 +47,14 @@ def file_handler(relative_path: pathlib.Path | None = None):
                 with open(file, mode) as f:
                     f.write(text)
             mode_dict = {"r": _read_file,
-                         "w": _write_to_file, "x": _write_to_file}
+                         "w": _write_to_file, "x": _write_to_file, "wb" : _write_to_file}
             return mode_dict[mode]()
         except KeyError:
             raise NotImplementedError(
                 "This function only accepts reading and writing modes as of now.")
     return read_write_handler
 
-data_dir_io = file_handler(DATA_DIR)
+IO_DATA_DIR = file_handler(DATA_DIR)
 
 
 @dataclass
@@ -98,7 +98,7 @@ class UnexpectedBehaviourError(Exception):
 
 
 class WebsiteMeta:
-    file = data_dir_io("creds.txt")
+    file = IO_DATA_DIR("creds.txt")
     file = file.split("\n")
     username, password, api_key, public_context, testing_chat_context = file
 
@@ -120,25 +120,15 @@ def iterate_over_iterable(T: Iterable):
         print(i)
 
 
-def error_if_not_iterable(thing, message, obj):
-    try:
-        thing[0]
-    except TypeError:
-        raise UnexpectedBehaviourError(message, obj)
 
 
 def flattening_iterator(*args: Iterable[Any]) -> Generator[Any, None, None]:
-    def single_iterable(T: Iterable):
-        for i in T:
-            # includes generators and iterators as well
-            if not isinstance(i, str) and hasattr(i, "__iter__"):
-                yield from i
-            else:
-                yield i
-    error_if_not_iterable(
-        args, "Expected iterable or iterator", flattening_iterator)
     for i in args:
-        yield from single_iterable(i)
+        try:
+            yield from i
+        
+        except TypeError:
+            yield i
 
 
 def repeat(obj: Any, n: int):
@@ -194,7 +184,6 @@ def not_singleton(T: Iterable):
 
 
 def safe_next(iterator_or_gen: Iterator | Generator):
-    if hasattr(iterator_or_gen, "__iter__"):
         return next(iterator_or_gen, None)
 
 
@@ -405,17 +394,19 @@ def soup_bowl(html): return BeautifulSoup(html, "lxml")
 
 
 def links_and_meetings_wrapper() -> dict[str, list[str]]:
-    return data_dir_io("links_and_meetings.json")
+    return json.loads(IO_DATA_DIR("links_and_meetings.json"))
 
 
 def notifications_wrapper() -> List[dict]:
-    data = data_dir_io("results.json")[0]["data"]["notifications"]
-    return json.loads(data)
+    data = IO_DATA_DIR("results.json")
+    return json.loads(data)[0]["data"]["notifications"]
 
 
 def courses_wrapper() -> List[dict]:
-    return json.loads(data_dir_io("courses.json")[0]["data"]["courses"])
+    return json.loads(IO_DATA_DIR("courses.json"))[0]["data"]["courses"]
 
+def mappings_wrapper() -> dict[str,str]:
+    return json.loads(IO_DATA_DIR("mappings.json"))
 
 def insert_into_dict(dictionary, index, pair) -> dict:
     keys, values = list(dictionary.keys()), list(dictionary.values())

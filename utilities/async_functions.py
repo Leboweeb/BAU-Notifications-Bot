@@ -7,7 +7,7 @@ import re
 from typing import AsyncGenerator, Generator, List, Tuple
 import httpx
 import datefinder
-from utilities.common import REQUIRED_DATE_FORMAT, Announcement, Assignment, WebsiteMeta, add_cookies_to_header, clean_iter, coerce_to_none, courses_wrapper, css_selector, file_handler, has_required_format, not_singleton, json, my_format, get_sequence_or_item, safe_next, soup_bowl, url_encode
+from utilities.common import REQUIRED_DATE_FORMAT, Announcement, Assignment, WebsiteMeta, add_cookies_to_header, clean_iter, coerce_to_none, courses_wrapper, css_selector, has_required_format, mappings_wrapper, not_singleton, my_format, get_sequence_or_item, safe_next, soup_bowl, url_encode
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ async def relative_time_dt(gen : Generator) -> int:
 
 async def get_data(dicts: list[dict]) -> List[Announcement]:
     objects = [i for i in dicts]
-    mappings = json.loads(file_handler("mappings.json"))
+    mappings = mappings_wrapper()
     keys = ("subject",
             "fullmessage", "timecreatedpretty")
     CURRENT_DAY = datetime.now().day

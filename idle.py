@@ -8,7 +8,7 @@ import telebot
 from datefinder import find_dates
 from concurrent.futures import ThreadPoolExecutor
 from functions import TelegramInterface, notification_message_builder, search_notifications
-from utilities.common import autocorrect, checker_factory, flatten_iter, WebsiteMeta, null_safe_chaining, safe_next, data_dir_io
+from utilities.common import autocorrect, checker_factory, flatten_iter, WebsiteMeta, null_safe_chaining, safe_next, IO_DATA_DIR
 
 api_key, chat_id = WebsiteMeta.api_key, WebsiteMeta.public_context
 
@@ -152,7 +152,7 @@ class BotCommands:
         interface.update_links_and_meetings()
         with open("links_and_meetings.json") as f:
             string_to_be_processed = f.read()
-        data_dir_io("links_and_meetings.txt", "w", string_to_be_processed)
+        IO_DATA_DIR("links_and_meetings.txt", "w", string_to_be_processed)
         bot.send_document(chat_id, document=open(
             "links_and_meetings.txt", "rb"))
 

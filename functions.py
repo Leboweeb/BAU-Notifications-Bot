@@ -1,6 +1,8 @@
+import PyPDF2
+from datetime import datetime
 from functools import reduce
 from typing import Iterable
-from utilities.common import Announcement, bool_return, clean_iter, flatten_iter, json, autocorrect, string_builder, data_dir_io
+from utilities.common import DATA_DIR, Announcement, bool_return, clean_iter, flatten_iter, json, autocorrect, string_builder, IO_DATA_DIR
 from utilities.input_filters import notification_cleanup, ALL_NOTIFICATIONS
 
 
@@ -54,6 +56,13 @@ def search_case_insensitive(query: str, text: str):
         return result
 
 
+def get_current_week() -> str:
+    pdf_file = DATA_DIR.open("rb")
+    text =  PyPDF2.PdfFileReader(pdf_file)
+    page = text.pages[0]
+    page.extractText()
+    now = datetime.now()
+
 
 
 class TelegramInterface:
@@ -61,13 +70,13 @@ class TelegramInterface:
         self.unfiltered_notifications = ALL_NOTIFICATIONS
         self.notifications = notification_cleanup(
             self.unfiltered_notifications)
-        self.course_mappings_dict = json.loads(data_dir_io("mappings.json"))
+        self.course_mappings_dict = json.loads(IO_DATA_DIR("mappings.json"))
         self.stripped_course_numbers = list(map(lambda x: x.split(
             "-")[0].lower(), self.course_mappings_dict.values()))
         self.update_links_and_meetings()
 
     def update_links_and_meetings(self):
-        existing_links =data_dir_io("links_and_meetings.json")
+        existing_links =IO_DATA_DIR("links_and_meetings.json")
         if existing_links:
             try:
                 existing_links = json.loads(existing_links)
@@ -80,7 +89,7 @@ class TelegramInterface:
         if isinstance(existing_links, dict):
             notifications |= existing_links
         notifications = json.dumps(notifications, indent=4)
-        data_dir_io("links_and_meetings.json", "w", notifications)
+        IO_DATA_DIR("links_and_meetings.json", "w", notifications)
 
     def get_index_from_name(self, query):
         query = query.replace(" ", "").strip()
