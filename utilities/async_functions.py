@@ -4,10 +4,11 @@ import itertools as it
 from datetime import datetime
 import asyncio
 import re
-from typing import AsyncGenerator, Generator, List, Tuple
+from typing import AsyncGenerator, List, Tuple
 import httpx
 import datefinder
-from utilities.common import REQUIRED_DATE_FORMAT, Announcement, Assignment, WebsiteMeta, add_cookies_to_header, clean_iter, coerce_to_none, courses_wrapper, css_selector, has_required_format, mappings_wrapper, not_singleton, my_format, get_sequence_or_item, safe_next, soup_bowl, url_encode
+from utilities.common import Announcement, Assignment, WebsiteMeta, add_cookies_to_header, clean_iter, coerce_to_none, courses_wrapper, css_selector, get_regex_group, has_required_format, my_format, safe_next, soup_bowl, url_encode
+from utilities.time_parsing_lib import to_natural_str
 
 
 @dataclass(frozen=True)
@@ -18,9 +19,9 @@ class Course:
 
 async def collect_tasks(pred=None, collection=None):
     if all((pred, collection)):
-        result = await asyncio.gather(*[asyncio.ensure_future(pred(item)) for item in collection])
+        result = await asyncio.gather(*(asyncio.ensure_future(pred(item)) for item in collection))
     else:
-        result = await asyncio.gather(*[asyncio.ensure_future(item) for item in collection])
+        result = await asyncio.gather(*(asyncio.ensure_future(item) for item in collection))
 
     return result
 
@@ -32,22 +33,10 @@ async def async_filter(async_pred, iterable) -> AsyncGenerator:
             yield item
 
 
-async def relative_time_dt(gen : Generator) -> int:
-    found_explicit_date, found_implicit_date = False, False
-    for i in gen:
-        pass
-    return 0
-
-        
-
-async def get_data(dicts: list[dict]) -> List[Announcement]:
+async def get_data(dicts: list[dict]):
     objects = [i for i in dicts]
-    mappings = mappings_wrapper()
     keys = ("subject",
-            "fullmessage", "timecreatedpretty")
-    CURRENT_DAY = datetime.now().day
-    non_exam_types, exam_types = (
-        "lab", "project", "session"), ("quiz", "test", "exam", "grades", "midterm")
+            "fullmessage", "timecreated")
 
     async def _make_announcement(obj):
         announcement = Announcement(
@@ -56,68 +45,20 @@ async def get_data(dicts: list[dict]) -> List[Announcement]:
 
     objects = await collect_tasks(_make_announcement, objects)
 
-    async def _attr_worker(announcement: Announcement):
-        try:
-            announcement.subject_code, announcement.subject_type = announcement.title.split(
-                ":")
-        except ValueError:
-            announcement.subject_code, announcement.subject_type = announcement.title.split(":")[
-                0], None
-        announcement.subject = mappings[announcement.subject_code]
-        # I love the union syntax so much, I'm legit crying. WHY WAS IT SO
-        # HARD IN PYTHON 2? WHYYYYYY ??
-        type_dict = {name: "exam" for name in exam_types} | {
-            name: name for name in non_exam_types}
-
-        split = announcement.message.split(
-            "---------------------------------------------------------------------")
-        announcement.message = split[1]
-        try:
-            if announcement.subject_type:
-                announcement.subject_type = re.findall("|".join(it.chain(
-                    non_exam_types, exam_types)), announcement.subject_type.lower(), re.MULTILINE)
-                temp = get_sequence_or_item(announcement.subject_type)
-                announcement.subject_type = temp
-                if not_singleton(announcement.subject_type) is False:
-                    announcement.subject_type = type_dict[temp]
-
-        except (KeyError, IndexError):
-            announcement.subject_type = None
-
-        try:
-            fuzzy_date = safe_next(
-                filter(has_required_format,  datefinder.find_dates(announcement.message, True)))
-        except IndexError:
-            fuzzy_date = None
-        if fuzzy_date:
-            fuzzy_date = fuzzy_date[0]
-            announcement.deadline = fuzzy_date.strftime(REQUIRED_DATE_FORMAT)
-            if fuzzy_date.tzinfo:
-                fuzzy_date = next(
-                    datefinder.find_dates(
-                        announcement.message.replace(
-                            re.findall(
-                                r"\d+:\d+",
-                                announcement.message)[1],
-                            "")))
-            dt = (fuzzy_date - datetime.now()).days
+    async def _time_delta_worker(announcement: Announcement):
+        fuzzy_date : datetime
+        DELETE_TZINFO_REGEX = re.compile(r"\d+:\d+", re.MULTILINE)
+        fuzzy_date  , _ = safe_next(
+            filter(has_required_format,  datefinder.find_dates(announcement.message, source=True)))
+        announcement.deadline = to_natural_str(fuzzy_date)
+        if fuzzy_date.tzinfo:
+            fuzzy_date = next(
+                datefinder.find_dates(
+                    announcement.message.replace(str(get_regex_group(compiled=DELETE_TZINFO_REGEX)))))
+            # TODO : Add more robust announcement object timedelta api
+            dt = (fuzzy_date - datetime.fromtimestamp(announcement.time_created)).days
             announcement.time_delta = dt
-
-        async def _course_links(Notification: Announcement):
-            """
-            An internal function to return zoom meeting links in each announcement object
-            """
-            link_regex = r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
-
-            async def meetings_filter(link): return re.findall(
-                "teams|zoom|meeting", link, flags=re.IGNORECASE) is not None
-            links = re.findall(link_regex, Notification.message, re.MULTILINE)
-            links = [i async for i in
-                     async_filter(meetings_filter, links)]
-            Notification.links = links if links else None
-
-        await _course_links(announcement)
-    await collect_tasks(_attr_worker, objects)
+    await collect_tasks(_time_delta_worker, objects)
     return objects
 
 

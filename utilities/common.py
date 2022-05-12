@@ -1,19 +1,20 @@
 from __future__ import annotations
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 import difflib
 from functools import reduce
 import itertools as it
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import logging
 import pathlib
 import re
 from types import FunctionType
 from bs4 import BeautifulSoup
-from typing import Any, AnyStr, Coroutine, Iterable, Iterator, List, Generator, Sequence, TypeVar
+from typing import Any, Coroutine, Iterable, Iterator, List, Generator, Optional, Sequence, TypeVar
 
-DATA_DIR = pathlib.Path("./bot_data_stuff").resolve()
+DATA_DIR_PATH = "bot_data_stuff"
+DATA_DIR = pathlib.Path(f"./{DATA_DIR_PATH}").resolve()
 
 
 FORMAT = "%(levelname)s %(asctime)s - %(message)s"
@@ -47,12 +48,13 @@ def file_handler(relative_path: pathlib.Path | None = None):
                 with open(file, mode) as f:
                     f.write(text)
             mode_dict = {"r": _read_file,
-                         "w": _write_to_file, "x": _write_to_file, "wb" : _write_to_file}
+                         "w": _write_to_file, "x": _write_to_file, "wb": _write_to_file}
             return mode_dict[mode]()
         except KeyError:
             raise NotImplementedError(
                 "This function only accepts reading and writing modes as of now.")
     return read_write_handler
+
 
 IO_DATA_DIR = file_handler(DATA_DIR)
 
@@ -61,13 +63,49 @@ IO_DATA_DIR = file_handler(DATA_DIR)
 class Announcement:
     title: str
     message: str
-    time_created: str
-    subject = ""
-    subject_code = ""
-    subject_type = None
-    deadline = None
-    links = None
-    time_delta = None
+    time_created: int
+    deadline: str = field(init=False)
+    time_delta: int = field(init=False)
+
+    # This ensures that object attribute setting is done in a maintainable way
+    def __post_init__(self):
+        self.time_created = datetime.fromtimestamp(self.time_created)
+    
+    
+    @property
+    def links(self) -> Optional[tuple[str]]:
+        """
+        An internal function to return zoom meeting links in each announcement object
+        """
+        link_regex = r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
+
+        def meetings_filter(link): return re.findall(
+            "teams|zoom|meeting", link, flags=re.IGNORECASE) is not None
+        links = filter(meetings_filter, re.findall(
+            link_regex, self.message, re.MULTILINE))
+        return bool_return(tuple(links))
+
+    @property
+    def subject_code(self):
+        return self.title.split(":")[0]
+
+    @property
+    def subject_type(self):
+        non_exam_types, exam_types = (
+            "lab", "project", "session"), ("quiz", "test", "exam", "grades", "midterm")
+        type_dict = dict.fromkeys(exam_types, "exam") | {
+            name: name for name in non_exam_types}
+        unprocessed_subject: Optional[str] = null_safe_chaining(
+            self.title.split()[1], "lower", callable=True)
+        subject: Optional[str] = null_safe_chaining(re.search("|".join(flattening_iterator(
+            non_exam_types, exam_types)), unprocessed_subject, re.MULTILINE), "group", callable=True)
+        return type_dict.get(subject, None)
+
+    @property
+    def subject(self):
+        return mappings_wrapper()[self.subject_code]
+    
+    
 
 
 @dataclass
@@ -120,13 +158,13 @@ def iterate_over_iterable(T: Iterable):
         print(i)
 
 
-
-
-def flattening_iterator(*args: Iterable[Any]) -> Generator[Any, None, None]:
+def flattening_iterator(*args: Iterable[Any] | Any) -> Generator[Any, None, None]:
     for i in args:
         try:
+            if type(i) == str:
+                raise TypeError
             yield from i
-        
+
         except TypeError:
             yield i
 
@@ -160,6 +198,12 @@ def get_sequence_or_item(sequence: Sequence):
             return sequence[0]
         return sequence
 
+def get_regex_group(pattern : str , _str : str , flag : Optional[re._FlagsType]  = None, compiled : Optional[re.Pattern] = None) -> Optional[str]:
+    if compiled :
+        reg = compiled
+    else:
+        reg = re.compile(pattern, flags=flag) if flag else re.compile(pattern)
+    return null_safe_chaining(reg.search(_str), "group", callable=True)
 
 def string_builder(strings: Iterable, prefixes: Iterable,
                    separator: str = "\n") -> str:
@@ -184,7 +228,7 @@ def not_singleton(T: Iterable):
 
 
 def safe_next(iterator_or_gen: Iterator | Generator):
-        return next(iterator_or_gen, None)
+    return next(iterator_or_gen, None)
 
 
 def safe_next_chaining(iterator_or_gen, attr):
@@ -248,7 +292,7 @@ def has_required_format(collection: tuple[datetime, str]) -> bool:
                                                                                                     "February", "March", "April", "June", "July", "August", "September", "October", "November", "December")
     day_abbr, mon_abbr = (map(abbreviate, i) for i in (DAYS, MONTHS))
     _, string = collection
-    DATE_WORDS = combine(DAYS, MONTHS, day_abbr, mon_abbr)
+    DATE_WORDS = tuple(flattening_iterator(DAYS, MONTHS, day_abbr, mon_abbr))
     cond = re.search("|".join(DATE_WORDS), string, re.IGNORECASE)
     return bool(cond)
 
@@ -284,9 +328,10 @@ def null_safe(*args: Iterable, mode="list"):
         raise UnexpectedBehaviourError(f"None found in {args}", null_safe)
 
 
-def null_safe_chaining(_object, attribute, default=None):
+def null_safe_chaining(_object, attribute, default=None, callable: bool = False):
     try:
-        return getattr(_object, attribute)
+        attr = getattr(_object, attribute)
+        return attr if not callable else attr()
 
     except AttributeError:
         return default
@@ -392,7 +437,6 @@ def run(x: Coroutine): return asyncio.run(x)
 def soup_bowl(html): return BeautifulSoup(html, "lxml")
 
 
-
 def links_and_meetings_wrapper() -> dict[str, list[str]]:
     return json.loads(IO_DATA_DIR("links_and_meetings.json"))
 
@@ -405,8 +449,10 @@ def notifications_wrapper() -> List[dict]:
 def courses_wrapper() -> List[dict]:
     return json.loads(IO_DATA_DIR("courses.json"))[0]["data"]["courses"]
 
-def mappings_wrapper() -> dict[str,str]:
+
+def mappings_wrapper() -> dict[str, str]:
     return json.loads(IO_DATA_DIR("mappings.json"))
+
 
 def insert_into_dict(dictionary, index, pair) -> dict:
     keys, values = list(dictionary.keys()), list(dictionary.values())

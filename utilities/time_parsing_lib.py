@@ -1,123 +1,67 @@
 from __future__ import annotations
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from io import BufferedReader
 import re
-import requests
-import PyPDF2
-from typing import Callable, Generator, Iterable, Optional, Sequence
-from utilities.common import DATA_DIR, IO_DATA_DIR, REQUIRED_DATE_FORMAT, UnexpectedBehaviourError, flattening_iterator, null_safe_chaining
+from typing import Callable, Generator, Iterable, Sequence
+from utilities.common import REQUIRED_DATE_FORMAT, UnexpectedBehaviourError, null_safe_chaining
 
 
 datetime_dict = dict[str, int]
 
-
-DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",
-                                                                                                "February", "March", "April", "June", "July", "August", "September", "October", "November", "December")
-
-
-def to_natural_str(dt: datetime): return dt.strftime("%A %B %d %Y")
 
 
 def datetime_to_dict(dt: datetime) -> datetime_dict: return {
     "year": dt.year, "month": dt.month, "day": dt.day}
 
 
-def replace_dt_with_dict(dt: datetime, dt_dict: datetime_dict, tzinfo=None):
+def replace_dt_with_dict(dt: datetime, dt_dict: datetime_dict):
     return dt.replace(**dt_dict, tzinfo=None)
 
 
-# Semester Namespace
 
-PDF_URL = r"https://mis.bau.edu.lb/web/v12/PortalAssets/Calendar.pdf"
-
-
-@dataclass
-class SemesterMetaInfo:
-    semester: str = field(init=False)
-    semester_month_dict: dict[datetime, Optional[str]] = field(init=False)
+def to_natural_str(dt: datetime): return dt.strftime("%A %B %d %Y")
+DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",
+                                                                                                "February", "March", "April", "June", "July", "August", "September", "October", "November", "December")
 
 
-def find_current_semester(info_obj: SemesterMetaInfo):
-    semester_months = info_obj.semester_month_dict
-    semester_list = sorted(flattening_iterator(semester_months, now))
-    return semester_months[semester_list[semester_list.index(now) - 1]]
+def change_dt(anchor: datetime, operation: str = '-') -> Callable[[datetime_dict], datetime]:
+    # less error prone date subtraction or addition api
+    if operation not in ("+", "-"):
+        raise UnexpectedBehaviourError(
+            f"Operation type {operation} not defined in datetime context", change_dt)
+
+    def convert_unit(date: datetime_dict) -> datetime:
+        day_conversion_map = {
+            "day": 1,
+            "days": 1,
+            "week": 7,
+            "weeks": 7,
+        }
+        year_conversion_map = {
+            "year": 1,
+            "years": 1,
+            "decade": 10,
+            "decades": 10,
+            "century": 100,
+            "centuries": 100
+        }
+        def generate_unit(map: datetime_dict, reference: datetime_dict) -> int: return sum(
+            (v * map[k] for k, v in reference.items() if k in map))
+        simplified_dict = {
+            "days": generate_unit(day_conversion_map, date),
+            "months": date.get("month", 0) or date.get("months", 0),
+            "years": generate_unit(year_conversion_map, date)
+        }
+        # # literally everything works except months because the gregorian calendar is stupid, seriously why the fuck do we use this shit
+        transformed_date = anchor - \
+            timedelta(days=simplified_dict["days"]) if operation == "-" else anchor + timedelta(
+                days=simplified_dict["days"])
+        return transformed_date.replace(month=anchor.month - simplified_dict["months"], year=anchor.year - simplified_dict["years"]) if operation == "-" else transformed_date.replace(month=anchor.month + simplified_dict["months"], year=anchor.year + simplified_dict["years"])
+    return convert_unit
 
 
-def find_week(info_obj: SemesterMetaInfo,  week: int = 0):
-    # find the current week if week = 0, otherwise find out when a particular week is
-    semester, semester_dict = info_obj.semester, {
-        v: k for k, v in info_obj.semester_month_dict.items()}
-    FIRST_WEEK_DATE = semester_dict[semester.capitalize()]
-    if week:
-        return to_natural_str(FIRST_WEEK_DATE + timedelta(weeks=week))
-    count, curr_dt = 0, FIRST_WEEK_DATE
-
-    def in_week(timestamp: datetime, ref: datetime):
-        def find_week(dt: datetime): return dt - timedelta(days=dt.weekday())
-        return find_week(timestamp) == find_week(ref)
-    while not in_week(curr_dt, now):
-        count += 1
-        curr_dt += timedelta(weeks=1)
-    return count
-
-
-def get_semester_dict(text: str):
-    DATE_FORMAT = fr"\d+-({'|'.join(mon_abbr)})-\d+"
-
-    def find_semester_dates():
-        return re.finditer(fr"{DATE_FORMAT}\w+(semester|session)(beginsforallfaculties|begins)", text, re.IGNORECASE)
-
-    dates = find_semester_dates()
-
-    def search_no_case(pattern: str, _string: str) -> Optional[str]: return null_safe_chaining(
-        re.search(pattern, _string, re.IGNORECASE), "group")()
-
-    semester_months: dict[datetime, Optional[str]] = {
-        datetime.strptime(re.sub(r"(fall|spring|summer)\w+", "", i.group(), flags=re.IGNORECASE),
-                          "%d-%b-%y"):  search_no_case("fall|spring|summer", i.group()) for i in dates
-    }
-    return semester_months
-
-
-def make_request():
-    pdf_req = requests.get(PDF_URL)
-    IO_DATA_DIR("smth.pdf", "wb", pdf_req.content)
-
-
-def abbreviate(x): return x[:3]
-def read_pdf(): return DATA_DIR.joinpath("smth.pdf").open("rb")
-
-
-day_abbr, mon_abbr = (map(abbreviate, i) for i in (DAYS, MONTHS))
-now = datetime(**datetime_to_dict(datetime.now()), tzinfo=None)
-
-
-def get_pdf_text(fileobj: BufferedReader):
-    text = PyPDF2.PdfFileReader(fileobj)
-    page = text.pages[0]
-    pdf_txt: str = page.extractText()
-    pdf_txt = re.sub("\s", "", pdf_txt)
-    return pdf_txt
-
-
-def set_pdf(): return get_pdf_text(read_pdf())
-
-
-pdf_text = set_pdf()
-
-meta_inf = SemesterMetaInfo()
-
-meta_inf.semester_month_dict = get_semester_dict(pdf_text)
-if max(meta_inf.semester_month_dict).year < now.year:
-    make_request()
-    pdf_text = set_pdf()
-
-meta_inf.semester = find_current_semester(meta_inf)
-
-
-class RelativeDates:
+class RelativeDate:
 
     ANCHORS = ("next", "last", "before", "after")
     temp = ("today", "tomorrow", "day", "week",
@@ -130,85 +74,63 @@ class RelativeDates:
         self.mode = self.mode_factory()
         self.anchor = anchor
 
-    class DateCopy:
-        def __init__(self, datetime: datetime = datetime.now()) -> None:
-            ALL_ATTRS = ("hour", "day", "month", "year")
-            self.date = datetime
-            self.weekday = self.date.weekday()
-            self.minute, self.hour, self.day, self.month, self.year = {
-                getattr(self.date, i, None) for i in ALL_ATTRS}
-
-        def transform_copy(self):
-            return datetime(self.year, self.month, self.day, self.hour, self.minute)
-
-    @staticmethod
-    def change_dt(anchor: datetime, operation: str = '-') -> Callable[[datetime_dict], datetime]:
-        # less error prone date subtraction or addition api
-        if operation not in ("+", "-"):
-            raise UnexpectedBehaviourError(
-                f"Operation type {operation} not defined in datetime context", RelativeDates.change_dt)
-
-        def convert_unit(date: datetime_dict) -> datetime:
-            day_conversion_map = {
-                "day": 1,
-                "days": 1,
-                "week": 7,
-                "weeks": 7,
-            }
-            year_conversion_map = {
-                "year": 1,
-                "years": 1,
-                "decade": 10,
-                "decades": 10,
-                "century": 100,
-                "centuries": 100
-            }
-            def generate_unit(map: datetime_dict, reference: datetime_dict) -> int: return sum(
-                (v * map[k] for k, v in reference.items() if k in map))
-            simplified_dict = {
-                "days": generate_unit(day_conversion_map, date),
-                "months": date.get("month", 0) or date.get("months", 0),
-                "years": generate_unit(year_conversion_map, date)
-            }
-            # # literally everything works except months because the gregorian calendar is stupid, seriously why the fuck do we use this shit
-            transformed_date = anchor - \
-                timedelta(days=simplified_dict["days"]) if operation == "-" else anchor + timedelta(
-                    days=simplified_dict["days"])
-            return transformed_date.replace(month=anchor.month - simplified_dict["months"], year=anchor.year - simplified_dict["years"]) if operation == "-" else transformed_date.replace(month=anchor.month + simplified_dict["months"], year=anchor.year + simplified_dict["years"])
-        return convert_unit
-
-    def find_relative_dates(self, string: str):
-
+    def find_relative_date(self, string: str) -> datetime:
+        """
+        Finds a relative date in a single sentence or word, use 
+        find_relative dates to get a generator of all relative dates possible
+        ex : 1 day ago -> Monday 25 April 2022 if the current date is Tue-Apr-26-2022
+        """
+        # remove unnecessary characters that are not numbers or alphabet letters
         string = re.sub(r"[^a-zA-Z0-9\s]", "", string)
+        offset = change_dt(self.anchor)
 
         class Proxy:
             pass
-        if re.search(r"\d+ \w+ ago", string):
-            p, split = Proxy(), string.split(" ")
+        p, split = Proxy(), string.split(" ")
+        if len(split) > 1:
             for i, j in enumerate(split):
-                if j.isdigit() and split[i + 1] in RelativeDates.DATE_WORDS:
+                if j.isdigit() and split[i + 1] in RelativeDate.DATE_WORDS:
                     # p.__dict__ has type dict[str, int]
                     setattr(
-                        p, RelativeDates.DATE_WORDS[split[i + 1].lower()], int(j))
-            offset = self.change_dt(self.anchor)
-            return offset(p.__dict__)
+                        p, RelativeDate.DATE_WORDS[split[i + 1].lower()], int(j))
+        return offset(p.__dict__)
 
-    def parse_number_mode(self) -> str | None:
+    def relative_date_mode(self) -> str | None:
+        """
+        Convenience function to get relative directly as string
+        """
         potential_date: Callable[[str], str] = null_safe_chaining(
-            self.find_relative_dates(self.string), "strftime")
+            self.find_relative_date(self.string), "strftime")
         if potential_date:
             return potential_date(REQUIRED_DATE_FORMAT)
         return None
 
-    def natural_language_mode(self) -> datetime | None:
+    def mode_functor(self, string: str, delimiter: str = ".", source: bool = False) -> Generator[datetime, None, None] | Generator[tuple[datetime, str], None, None]:
+        """
+        apply the current mode (automatically) over a list of strings since each method accepts only one string and get
+        a generator of datetime objects instead of only one. Useful for parsing natural text 
+        """
+        for sentence in string.split(delimiter):
+            yield self.mode(sentence) if not source else self.find_relative_date(sentence), sentence
+
+    def natural_language_mode(self, string: str) -> datetime:
+        """
+        Splits a single string based on english grammar.
+        That is, only a single temporal adverb (there can be more than one modifier though) can be in a sentence.
+        Example : The exam will be next week. However, for another section it'll be after next week.
+        ---------------------------^----^---------------------------------------------^----^----^----
+                                modifier / time unit                                 2 modifiers / time unit
+
+        use the mode_functor method to apply this over several strings (usually a list of sentences)
+        """
         POSITIVE_OFFSETS, NEGATIVE_OFFSETS = (
             ("next", "after", "this"), ("ago", "before", "last"))
         ...
-        return None
+        return self.anchor
 
     def mode_factory(self):
-        if re.fullmatch(r"\d+", self.string):
-            return self.parse_number_mode
+        if re.search(r"\d+ \w+ ago", self.string):
+            return self.find_relative_date
         else:
             return self.natural_language_mode
 
@@ -240,7 +162,7 @@ def only_one_offset(s: str):
 
 
 def offset(offset_obj: Offset, dt: datetime) -> datetime | None:
-    transform_fn = RelativeDates.change_dt(dt, offset_obj.offset_type)
+    transform_fn = change_dt(dt, offset_obj.offset_type)
     return None
 
 
