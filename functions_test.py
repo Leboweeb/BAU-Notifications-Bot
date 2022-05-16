@@ -2,10 +2,10 @@ from datetime import datetime
 from types import FunctionType
 import unittest
 from functions import TelegramInterface
-from idle import autoremind_worker, filter_by_type_worker, search_notifications
+from idle import filter_by_type_worker, search_notifications
 from utilities.async_functions import prep_courses, datefinder
-from utilities.common import coerce_to_none, flattening_iterator, my_format, pad_iter, run
-from utilities.time_parsing_lib import RelativeDate, to_natural_str
+from utilities.common import coerce_to_none, flattening_iterator, my_format, pad_iter, run, to_natural_str
+from utilities.time_parsing_lib import RelativeDate
 
 
 def begin_test(obj: unittest.TestCase, cases: list, assertions: tuple, function: FunctionType = None, messages=None):
@@ -59,7 +59,7 @@ class SanityChecks(unittest.TestCase):
         def test_relative_date_mode():
             anc = datetime(2022, 3, 25)
             str_anc = to_natural_str(anc)
-            cases = tuple(RelativeDate(string=i, anchor=anc).relative_date_mode() for i in ("1 day ago", "1 year ago", "2 months ago", "1 week, 1 day ago", "1 week ,  1 day ago , and 1 month", "1 century ago", "1 decade ago"
+            cases = tuple(RelativeDate(string=i, anchor=anc).result_as_string() for i in ("1 day ago", "1 year ago", "2 months ago", "1 week, 1 day ago", "1 week ,  1 day ago , and 1 month", "1 century ago", "1 decade ago"
                                                                                             "", "1", "1234411 ; ';' ;''''", "___________"))
             begin_test(self, cases,
                        ("Thursday March 24 2022", "Thursday March 25 2021",  "Tuesday January 25 2022",

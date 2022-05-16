@@ -1,23 +1,31 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from functools import partial
 from io import BufferedReader
 import re
 from typing import Optional
-from common import DATA_DIR, IO_DATA_DIR, flattening_iterator, null_safe_chaining
+from utilities.common import DATA_DIR, IO_DATA_DIR, flattening_iterator, null_safe_chaining
 import requests
 import PyPDF2
 
 from utilities.time_parsing_lib import DAYS, MONTHS, to_natural_str
 
 
+def abbreviate(x): return x[:3]
+
 
 PDF_URL = r"https://mis.bau.edu.lb/web/v12/PortalAssets/Calendar.pdf"
 datetime_dict = dict[str, int]
+
+
 def datetime_to_dict(dt: datetime) -> datetime_dict: return {
     "year": dt.year, "month": dt.month, "day": dt.day}
+
+
 day_abbr, mon_abbr = (map(abbreviate, i) for i in (DAYS, MONTHS))
 now = datetime(**datetime_to_dict(datetime.now()), tzinfo=None)
+
 
 @dataclass
 class SemesterMetaInfo:
@@ -25,18 +33,19 @@ class SemesterMetaInfo:
     semester_month_dict: dict[datetime, Optional[str]] = field(init=False)
     inverted_month_dict: dict[Optional[str], datetime] = field(init=False)
 
-def find_certain_semester(info_obj: SemesterMetaInfo, query: str):
+
+def find_certain_semester(info_obj: SemesterMetaInfo, query: str) -> Optional[datetime]:
     query = query.lower().capitalize()
     return info_obj.inverted_month_dict.get(query, None)
 
 
-def find_current_semester(info_obj: SemesterMetaInfo):
+def _find_current_semester(info_obj: SemesterMetaInfo):
     semester_months = info_obj.semester_month_dict
     semester_list = sorted(flattening_iterator(semester_months, now))
     return semester_months[semester_list[semester_list.index(now) - 1]]
 
 
-def find_week(info_obj: SemesterMetaInfo,  week: int = 0):
+def _find_week(info_obj: SemesterMetaInfo, week: int = 0, date: datetime = now):
     # find the current week if week = 0, otherwise find out when a particular week is
     semester, semester_dict = info_obj.semester, {
         v: k for k, v in info_obj.semester_month_dict.items()}
@@ -48,13 +57,13 @@ def find_week(info_obj: SemesterMetaInfo,  week: int = 0):
     def in_week(timestamp: datetime, ref: datetime):
         def find_week(dt: datetime): return dt - timedelta(days=dt.weekday())
         return find_week(timestamp) == find_week(ref)
-    while not in_week(curr_dt, now):
+    while not in_week(curr_dt, date):
         count += 1
         curr_dt += timedelta(weeks=1)
     return count
 
 
-def get_semester_dicts(text: str):
+def _get_semester_dicts(text: str):
     DATE_FORMAT = fr"\d+-({'|'.join(mon_abbr)})-\d+"
 
     def find_semester_dates():
@@ -77,10 +86,7 @@ def make_request():
     IO_DATA_DIR("smth.pdf", "wb", pdf_req.content)
 
 
-def abbreviate(x): return x[:3]
 def read_pdf(): return DATA_DIR.joinpath("smth.pdf").open("rb")
-
-
 
 
 def get_pdf_text(fileobj: BufferedReader):
@@ -97,12 +103,10 @@ def set_pdf(): return get_pdf_text(read_pdf())
 pdf_text = set_pdf()
 
 
-
-
 meta_inf = SemesterMetaInfo()
-meta_inf.semester_month_dict, meta_inf.inverted_month_dict = get_semester_dicts(
+meta_inf.semester_month_dict, meta_inf.inverted_month_dict = _get_semester_dicts(
     pdf_text)
-meta_inf.semester = find_current_semester(meta_inf)
+meta_inf.semester = _find_current_semester(meta_inf)
 
 
 if max(meta_inf.semester_month_dict).year < now.year:
@@ -113,3 +117,4 @@ if max(meta_inf.semester_month_dict).year < now.year:
 
 # Constant to be used by external modules
 FINAL_INFO_OBJ = deepcopy(meta_inf)
+find_week = partial(_find_week, info_obj=FINAL_INFO_OBJ)

@@ -16,6 +16,7 @@ from typing import Any, Coroutine, Iterable, Iterator, List, Generator, Optional
 DATA_DIR_PATH = "bot_data_stuff"
 DATA_DIR = pathlib.Path(f"./{DATA_DIR_PATH}").resolve()
 
+T = TypeVar("T")
 
 FORMAT = "%(levelname)s %(asctime)s - %(message)s"
 logging.basicConfig(
@@ -25,8 +26,7 @@ logging.basicConfig(
     filemode="w")
 logger = logging.getLogger()
 
-REQUIRED_DATE_FORMAT = r"%A %B %d %Y"
-
+def to_natural_str(dt: datetime): return dt.strftime("%A %B %d %Y")
 NOT_STRING = TypeVar("NOT_STRING", list, dict, set, tuple)
 
 
@@ -40,38 +40,64 @@ def file_handler(relative_path: pathlib.Path | None = None):
                     "expected a file argument", file_handler)
 
             def _read_file():
-                with open(file) as f:
+                with open(file, mode) as f:
                     res = f.read()
                 return res
 
             def _write_to_file():
                 with open(file, mode) as f:
                     f.write(text)
-            mode_dict = {"r": _read_file,
+            mode_dict = {"r": _read_file, "rb": _read_file,
                          "w": _write_to_file, "x": _write_to_file, "wb": _write_to_file}
             return mode_dict[mode]()
         except KeyError:
             raise NotImplementedError(
-                "This function only accepts reading and writing modes as of now.")
+                "Unrecognized file operation mode.")
     return read_write_handler
 
 
 IO_DATA_DIR = file_handler(DATA_DIR)
 
+def string_builder(strings: Iterable, prefixes: Iterable,
+                   separator: str = "\n") -> str:
+    """
+    Builds a string incrementally until it reaches a breakpoint (a field is missing)
+    """
+    def built_strings():
+        for string, prefix in zip(strings, prefixes):
+            if string and prefix:
+                yield f"{prefix} : {string}"
+    return separator.join(filter(None, built_strings()))
 
 @dataclass
 class Announcement:
     title: str
     message: str
     time_created: int
-    deadline: str = field(init=False)
-    time_delta: int = field(init=False)
+    deadline: Optional[str]= field(init=False)
+    time_delta: Optional[int]= field(init=False)
+
+    def __post_init__(self):
+        self.message = self.message.split("---------------------------------------------------------------------")[1]
+    
+    def __str__(self) -> str:
+        attrs = ("title", "subject", "message", "deadline")
+        strings = [getattr(self, attr)
+                for attr in attrs]
+        prefixes = [i.capitalize() for i in attrs]
+        strings.append(to_natural_str(self.date_created))
+        prefixes.append("Time created")
+        return f"""
+        ---------------------------------------
+            {string_builder(strings,prefixes)}
+        ---------------------------------------
+        """
 
     # This ensures that object attribute setting is done in a maintainable way
-    def __post_init__(self):
-        self.time_created = datetime.fromtimestamp(self.time_created)
-    
-    
+    @property
+    def date_created(self):
+        return datetime.fromtimestamp(self.time_created)
+
     @property
     def links(self) -> Optional[tuple[str]]:
         """
@@ -104,8 +130,6 @@ class Announcement:
     @property
     def subject(self):
         return mappings_wrapper()[self.subject_code]
-    
-    
 
 
 @dataclass
@@ -198,23 +222,20 @@ def get_sequence_or_item(sequence: Sequence):
             return sequence[0]
         return sequence
 
-def get_regex_group(pattern : str , _str : str , flag : Optional[re._FlagsType]  = None, compiled : Optional[re.Pattern] = None) -> Optional[str]:
-    if compiled :
-        reg = compiled
-    else:
-        reg = re.compile(pattern, flags=flag) if flag else re.compile(pattern)
-    return null_safe_chaining(reg.search(_str), "group", callable=True)
 
-def string_builder(strings: Iterable, prefixes: Iterable,
-                   separator: str = "\n") -> str:
-    """
-    Builds a string incrementally until it reaches a breakpoint (a field is missing)
-    """
-    def built_strings():
-        for string, prefix in zip(strings, prefixes):
-            if string and prefix:
-                yield f"{prefix} : {string}"
-    return separator.join(filter(None, built_strings()))
+def get_group(match : re.Match) -> Optional[str]:
+    return null_safe_chaining(match, "group", callable=True)
+
+
+def add_regex_boundaries(coll: Sequence[str]) -> str:
+    initial_string = ""
+    for i in coll:
+        initial_string += fr"{i}|"
+    return initial_string
+
+
+
+
 
 
 def not_singleton(T: Iterable):
@@ -251,10 +272,6 @@ def my_format(item, description=None, level=logging.info):
     return level(f"{item}")
 
 
-def humanize_date(dt: datetime) -> str:
-    return dt.strftime(REQUIRED_DATE_FORMAT)
-
-
 def is_similar(first, second, ratio):
     return difflib.SequenceMatcher(None, first, second).quick_ratio() >= ratio
 
@@ -286,15 +303,6 @@ def combine(*iterables: Iterable, out_iter=tuple) -> Iterable:
     return flatten_iter(it.chain(iterables), out_iter=out_iter)
 
 
-def has_required_format(collection: tuple[datetime, str]) -> bool:
-    def abbreviate(x): return x[:3]
-    DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",
-                                                                                                    "February", "March", "April", "June", "July", "August", "September", "October", "November", "December")
-    day_abbr, mon_abbr = (map(abbreviate, i) for i in (DAYS, MONTHS))
-    _, string = collection
-    DATE_WORDS = tuple(flattening_iterator(DAYS, MONTHS, day_abbr, mon_abbr))
-    cond = re.search("|".join(DATE_WORDS), string, re.IGNORECASE)
-    return bool(cond)
 
 
 def bool_return(thing, default=None):
@@ -335,6 +343,13 @@ def null_safe_chaining(_object, attribute, default=None, callable: bool = False)
 
     except AttributeError:
         return default
+
+def null_safe_index(_iter : Sequence, _index : int):
+    try:
+        return _iter[_index]
+    
+    except (TypeError, IndexError) as e:
+        return None
 
 
 def coerce_to_none(*args):

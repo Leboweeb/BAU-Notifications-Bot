@@ -1,20 +1,34 @@
 from dataclasses import dataclass
 import logging
-import itertools as it
 from datetime import datetime
 import asyncio
 import re
-from typing import AsyncGenerator, List, Tuple
+from typing import AsyncGenerator, List, Optional, Tuple
 import httpx
 import datefinder
-from utilities.common import Announcement, Assignment, WebsiteMeta, add_cookies_to_header, clean_iter, coerce_to_none, courses_wrapper, css_selector, get_regex_group, has_required_format, my_format, safe_next, soup_bowl, url_encode
-from utilities.time_parsing_lib import to_natural_str
+from utilities.common import Announcement, Assignment, WebsiteMeta, add_cookies_to_header, clean_iter, coerce_to_none, courses_wrapper, css_selector, flattening_iterator, get_group, my_format, null_safe_index, safe_next, soup_bowl, url_encode, to_natural_str
 
 
 @dataclass(frozen=True)
 class Course:
     name: str
     link: str
+
+
+def found_relative_date(string: str) -> bool:
+    _pattern = r"((next|after|this|following|ago|before|last|previous|)\s(day|week|month|year|decade|century))|(tomorrow|today|yesterday|Tomorrow|Today|Yesterday|TOMORROW|TODAY|YESTERDAY|)"
+    return bool(get_group(re.search(_pattern, string, re.MULTILINE)))
+
+
+def found_explicit_date(collection: tuple[datetime, str]) -> bool:
+    def abbreviate(x): return x[:3]
+    DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",
+                                                                                                    "February", "March", "April", "June", "July", "August", "September", "October", "November", "December")
+    day_abbr, mon_abbr = (map(abbreviate, i) for i in (DAYS, MONTHS))
+    _, string = collection
+    DATE_WORDS = tuple(flattening_iterator(DAYS, MONTHS, day_abbr, mon_abbr))
+    cond = re.search("|".join(DATE_WORDS), string, re.IGNORECASE)
+    return bool(cond)
 
 
 async def collect_tasks(pred=None, collection=None):
@@ -46,25 +60,31 @@ async def get_data(dicts: list[dict]):
     objects = await collect_tasks(_make_announcement, objects)
 
     async def _time_delta_worker(announcement: Announcement):
-        fuzzy_date : datetime
+        explicit_date : Optional[datetime]
         DELETE_TZINFO_REGEX = re.compile(r"\d+:\d+", re.MULTILINE)
-        fuzzy_date  , _ = safe_next(
-            filter(has_required_format,  datefinder.find_dates(announcement.message, source=True)))
-        announcement.deadline = to_natural_str(fuzzy_date)
-        if fuzzy_date.tzinfo:
-            fuzzy_date = next(
-                datefinder.find_dates(
-                    announcement.message.replace(str(get_regex_group(compiled=DELETE_TZINFO_REGEX)))))
-            # TODO : Add more robust announcement object timedelta api
-            dt = (fuzzy_date - datetime.fromtimestamp(announcement.time_created)).days
-            announcement.time_delta = dt
+        explicit_date =  null_safe_index(safe_next(
+            filter(found_explicit_date,  datefinder.find_dates(DELETE_TZINFO_REGEX.sub("", announcement.message), source=True))), 0)
+        now = datetime.now()
+        def subtract_from_today(ref: datetime) : return (ref - now).days
+        announcement.time_delta, announcement.deadline = None, None
+        if "exam" == announcement.subject_type:
+            if explicit_date:
+                dt = subtract_from_today(explicit_date)
+                announcement.deadline = to_natural_str(explicit_date)
+                announcement.time_delta = dt
+                # TODO : Add more robust announcement object timedelta api
+                # If one or more explicit date is found, bypass implicit date checking and get the minimum 
+                # since the minumum date is usually always the first result, getting the minimum is not needed
+            elif found_relative_date(announcement.message):
+                    # if no explicit date is found, generate a relative date from the time created and subtract it from now
+                    ...
     await collect_tasks(_time_delta_worker, objects)
     return objects
 
 
 def authenticate(func):
     """
-Authenticates an http request to the uni website before attempting to scrape data
+Authenticates an http request to the moodle website before attempting to scrape data
 useful for making arbitrary requests to it.
 
 :returns: the session cookies and the session itself.
