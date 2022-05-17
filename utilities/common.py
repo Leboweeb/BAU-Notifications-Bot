@@ -228,11 +228,7 @@ def get_group(match : re.Match) -> Optional[str]:
 
 
 def add_regex_boundaries(coll: Sequence[str]) -> str:
-    initial_string = ""
-    for i in coll:
-        initial_string += fr"{i}|"
-    return initial_string
-
+    return "|".join(coll)
 
 
 
