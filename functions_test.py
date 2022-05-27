@@ -1,14 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from functools import partial
 from types import FunctionType
+from typing import Callable, Iterable, Optional, Type
 import unittest
 from functions import TelegramInterface
-from idle import filter_by_type_worker, search_notifications
 from utilities.async_functions import prep_courses, datefinder
-from utilities.common import coerce_to_none, flattening_iterator, my_format, pad_iter, run, to_natural_str
+from utilities.common import UnexpectedBehaviourError, coerce_to_none, flattening_iterator, my_format, pad_iter, run, to_natural_str
 from utilities.time_parsing_lib import RelativeDate
 
 
-def begin_test(obj: unittest.TestCase, cases: list, assertions: tuple, function: FunctionType = None, messages=None):
+def begin_test(obj: unittest.TestCase, cases: list, assertions: tuple, function: FunctionType = None, messages: Optional[Iterable[str]] = None):
     if function:
         cases = list(function(i) for i in cases)
 
@@ -17,7 +18,8 @@ def begin_test(obj: unittest.TestCase, cases: list, assertions: tuple, function:
             obj.assertEqual(case, assertion)
         else:
             obj.assertEqual(case, assertion, message)
-    messages = pad_iter(messages, None, len(assertions))
+    messages = (f"Case {i}" for i, _ in enumerate(
+        cases)) if not messages else messages
     container = zip(cases, assertions, messages)
     for i in container:
         _check(*i)
@@ -56,21 +58,73 @@ class SanityChecks(unittest.TestCase):
         self.assertTrue(len(courses) > 4)
 
     def test_date_calculator(self):
-        def test_relative_date_mode():
-            anc = datetime(2022, 3, 25)
-            str_anc = to_natural_str(anc)
-            cases = tuple(RelativeDate(string=i, anchor=anc).result_as_string() for i in ("1 day ago", "1 year ago", "2 months ago", "1 week, 1 day ago", "1 week ,  1 day ago , and 1 month", "1 century ago", "1 decade ago"
-                                                                                            "", "1", "1234411 ; ';' ;''''", "___________"))
-            begin_test(self, cases,
-                       ("Thursday March 24 2022", "Thursday March 25 2021",  "Tuesday January 25 2022",
-                        "Thursday March 17 2022", "Thursday February 17 2022", "Saturday March 25 1922" ,  "Sunday March 25 2012",str_anc,str_anc,str_anc,str_anc),
-                       messages=tuple(f"Case {i}" for i in range(len(cases))),
-                       )
-        test_relative_date_mode()
+        anchor = datetime(2022, 3, 25)
+        str_anc = to_natural_str(anchor)
+        sentences = ("1 day ago",
+                     "1 year ago",
+                     "2 months ago",
+                     "1 week, 1 day ago",
+                     "1 week ,1 day ago , and 1 month",
+                     "1 century ago",
+                     "1 decade ago""",
+                     "1",
+                     "1234411 ; ';' ;''''",
+                     "___________")
+        obj = RelativeDate(".".join(sentences), anchor=anchor)
+        assertions = ("Thursday March 24 2022",
+                      "Thursday March 25 2021",
+                      "Tuesday January 25 2022",
+                      "Thursday March 17 2022",
+                      "Thursday February 17 2022",
+                      "Saturday March 25 1922",
+                      "Sunday March 25 2012",
+                      str_anc,
+                      str_anc,
+                      str_anc,
+                      str_anc)
+        begin_test(self, tuple(
+            map(to_natural_str, obj.generate_results())), assertions)
+        sentences = ("yesterday",
+                     "before yesterday",
+                     "last year",
+                     "last week",
+                     "before last month",
+                     "last century",
+                     "previous decade",
+                     "tomorrow",
+                     "after tomorrow",
+                     "today",
+                     "next week",
+                     " after next week",
+                     "next month",
+                     "following year",
+                     "after this decade",
+                     "after this century")
+
+        assertions = ("Thursday March 24 2022",
+                      "Wednesday March 23 2022",
+                      "Thursday March 25 2021",
+                      "Friday March 18 2022",
+                      "Tuesday January 25 2022",
+                      "Saturday March 25 1922",
+                      "Sunday March 25 2012",
+                      "Saturday March 26 2022",
+                      "Sunday March 27 2022",
+                      str_anc,
+                      to_natural_str(anchor + timedelta(7)),
+                      to_natural_str(anchor + timedelta(14)),
+                      "Monday April 25 2022",
+                      to_natural_str(anchor.replace(year=anchor.year + 1)),
+                      to_natural_str(anchor.replace(year=anchor.year + 10)),
+                      to_natural_str(anchor.replace(year=anchor.year + 100)))
+        obj = RelativeDate(".".join(sentences), anchor=anchor)
+        cases = tuple(map(to_natural_str, obj.generate_results()))
+        begin_test(self, cases=cases,
+                   assertions=assertions)
 
 
 class BotCommandsSuite(unittest.TestCase):
-    QUERIES = ("midterm", "on campus", "session")
+    QUERIES = ("exam","session")
 
     def test_date_getter(self):
         test_thing = datetime(2022, 3, 19)
@@ -86,10 +140,10 @@ class BotCommandsSuite(unittest.TestCase):
     #     self.assertTrue(stuff, "Should not be empty")
 
     def test_search_and_filter(self):
+        t = TelegramInterface()
         for query in BotCommandsSuite.QUERIES:
-            self.assertTrue(search_notifications(query))
-            self.assertEqual(filter_by_type_worker(
-                query), None, "Should not fail with junk words")
+            self.assertTrue(t.search_notifications(query))
+            self.assertEqual(t.filter_by_type_worker("junk"), None, "Should not fail with junk words")
 
     def test_name_wrapper(self):
         t = TelegramInterface()
@@ -108,7 +162,7 @@ class BotCommandsSuite(unittest.TestCase):
         begin_test(self, essential_tests, assertions, messages=messages)
         self.assertNotEqual(
             messages, None, "Should show notifications for cases")
-        self.assertIsNone(filter_by_type_worker(cases[-1]))
+        self.assertIsNone(t.filter_by_type_worker(cases[-1]))
 
 
 if __name__ == "__main__":

@@ -45,18 +45,19 @@ def _find_current_semester(info_obj: SemesterMetaInfo):
     return semester_months[semester_list[semester_list.index(now) - 1]]
 
 
+def find_week_of_datetime(dt: datetime): return dt - timedelta(days=dt.weekday())
+
 def _find_week(info_obj: SemesterMetaInfo, week: int = 0, date: datetime = now):
     # find the current week if week = 0, otherwise find out when a particular week is
     semester, semester_dict = info_obj.semester, {
         v: k for k, v in info_obj.semester_month_dict.items()}
     FIRST_WEEK_DATE = semester_dict[semester.capitalize()]
     if week:
-        return to_natural_str(FIRST_WEEK_DATE + timedelta(weeks=week))
+        return FIRST_WEEK_DATE + timedelta(weeks=week)
     count, curr_dt = 0, FIRST_WEEK_DATE
 
     def in_week(timestamp: datetime, ref: datetime):
-        def find_week(dt: datetime): return dt - timedelta(days=dt.weekday())
-        return find_week(timestamp) == find_week(ref)
+        return find_week_of_datetime(timestamp) == find_week_of_datetime(ref)
     while not in_week(curr_dt, date):
         count += 1
         curr_dt += timedelta(weeks=1)
@@ -117,4 +118,4 @@ if max(meta_inf.semester_month_dict).year < now.year:
 
 # Constant to be used by external modules
 FINAL_INFO_OBJ = deepcopy(meta_inf)
-find_week = partial(_find_week, info_obj=FINAL_INFO_OBJ)
+find_week_of_datetime = partial(_find_week, info_obj=FINAL_INFO_OBJ)

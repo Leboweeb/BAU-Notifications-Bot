@@ -122,7 +122,7 @@ class Announcement:
         type_dict = dict.fromkeys(exam_types, "exam") | {
             name: name for name in non_exam_types}
         unprocessed_subject: Optional[str] = null_safe_chaining(
-            self.title.split()[1], "lower", callable=True)
+            self.title.split(":")[1], "lower", callable=True)
         subject: Optional[str] = null_safe_chaining(re.search("|".join(flattening_iterator(
             non_exam_types, exam_types)), unprocessed_subject, re.MULTILINE), "group", callable=True)
         return type_dict.get(subject, None)

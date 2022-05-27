@@ -7,17 +7,14 @@ from typing import AsyncGenerator, List, Optional, Tuple
 import httpx
 import datefinder
 from utilities.common import Announcement, Assignment, WebsiteMeta, add_cookies_to_header, clean_iter, coerce_to_none, courses_wrapper, css_selector, flattening_iterator, get_group, my_format, null_safe_index, safe_next, soup_bowl, url_encode, to_natural_str
+from utilities.semester_utils import find_week_of_datetime
+from utilities.time_parsing_lib import RelativeDate
 
 
 @dataclass(frozen=True)
 class Course:
     name: str
     link: str
-
-
-def found_relative_date(string: str) -> bool:
-    _pattern = r"((next|after|this|following|ago|before|last|previous|)\s(day|week|month|year|decade|century))|(tomorrow|today|yesterday|Tomorrow|Today|Yesterday|TOMORROW|TODAY|YESTERDAY|)"
-    return bool(get_group(re.search(_pattern, string, re.MULTILINE)))
 
 
 def found_explicit_date(collection: tuple[datetime, str]) -> bool:
@@ -60,24 +57,32 @@ async def get_data(dicts: list[dict]):
     objects = await collect_tasks(_make_announcement, objects)
 
     async def _time_delta_worker(announcement: Announcement):
-        explicit_date : Optional[datetime]
+        explicit_date: Optional[datetime]
         DELETE_TZINFO_REGEX = re.compile(r"\d+:\d+", re.MULTILINE)
-        explicit_date =  null_safe_index(safe_next(
-            filter(found_explicit_date,  datefinder.find_dates(DELETE_TZINFO_REGEX.sub("", announcement.message), source=True))), 0)
+        explicit_date = null_safe_index(safe_next(
+            filter(found_explicit_date,  datefinder.find_dates(DELETE_TZINFO_REGEX.sub("", announcement.message), source=True, base_date=announcement.date_created))), 0)
         now = datetime.now()
-        def subtract_from_today(ref: datetime) : return (ref - now).days
+        def subtract_from_today(ref: datetime): return (ref - now).days
         announcement.time_delta, announcement.deadline = None, None
         if "exam" == announcement.subject_type:
             if explicit_date:
                 dt = subtract_from_today(explicit_date)
                 announcement.deadline = to_natural_str(explicit_date)
                 announcement.time_delta = dt
-                # TODO : Add more robust announcement object timedelta api
-                # If one or more explicit date is found, bypass implicit date checking and get the minimum 
+                # If one or more explicit date is found, bypass implicit date checking and get the minimum
                 # since the minumum date is usually always the first result, getting the minimum is not needed
-            elif found_relative_date(announcement.message):
-                    # if no explicit date is found, generate a relative date from the time created and subtract it from now
-                    ...
+            else:
+                # if no explicit date is found, generate a relative date from the time created and subtract it from now
+                make_relative_date = RelativeDate(
+                    string=announcement.message, anchor=announcement.date_created)
+                _dt = safe_next(make_relative_date.generate_results())
+                if _dt:
+                    _date = subtract_from_today(_dt)
+                    announcement.time_delta = _date
+                    announcement.deadline = to_natural_str(_dt)
+                else:
+                    week_number = get_group(re.search("week\s+\d+", announcement.message.lower(), re.MULTILINE))
+                    announcement.time_delta, announcement.deadline = (subtract_from_today((_week := find_week_of_datetime(week=int(re.split("\s+", week_number)[1])))) ,to_natural_str(_week)) if week_number else None, None
     await collect_tasks(_time_delta_worker, objects)
     return objects
 

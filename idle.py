@@ -1,14 +1,12 @@
 """
 Bot listens to commands here.
 """
-from datetime import datetime
 import os
-from typing import Any, cast
 import telebot
 from datefinder import find_dates
 from concurrent.futures import ThreadPoolExecutor
 from functions import TelegramInterface, notification_message_builder, search_notifications
-from utilities.common import autocorrect, checker_factory, flatten_iter, WebsiteMeta, null_safe_chaining, safe_next, IO_DATA_DIR
+from utilities.common import autocorrect, checker_factory, WebsiteMeta, null_safe_chaining, IO_DATA_DIR
 
 api_key, chat_id = WebsiteMeta.api_key, WebsiteMeta.public_context
 
@@ -27,65 +25,17 @@ Hello ! To start using me, simply write a command in plain text and I will do my
 
 """
 
-exam_types : dict[str,str] =  dict.fromkeys(("quiz", "test", "exam", "grades", "exams", "quizzes", "tests"), "exam") 
-non_exam_types = dict.fromkeys(("lab", "labs"), "lab") | dict.fromkeys(("project", "projects"), "project")
-overall_types = exam_types | non_exam_types
 
+try:
+    interface = TelegramInterface()
+except (KeyError, FileNotFoundError):
+    bot.send_message(
+        chat_id, "The moodle webservice is down, I will not respond until a minute or two.")
 
-def autoremind_worker():
-
-    is_relatively_recent = checker_factory(0, 7)
-
-    def override(
-        x): return "next week" in x.message and x.subject_type is not None and x.subject_type != "session"
-
-    def notification_gen(T):
-        for notification in T:
-            if override(notification) or is_relatively_recent(notification.time_delta):
-                yield notification
-    result = notification_gen(interface.notifications)
-    result = (notification_message_builder(i) for i in result)
-    return tuple(result)
-
-
-def filter_by_type_worker(query):
-    def _traditional_types():
-        course_mappings = interface.course_mappings_dict
-        messages = interface.unfiltered_notifications
-        processed_message = ""
-        try:
-            processed_message = interface.name_wrapper(query)
-        except TypeError:
-            processed_message = None
-
-        def subjects_codes_condition(x):
-            return course_mappings[x.subject_code.split(":")[0]] == processed_message
-
-        def subjects_types_condition(
-            x): return x.subject_type == overall_types[processed_message]
-
-        if processed_message in flatten_iter(course_mappings.items()):
-            return filter(subjects_codes_condition, messages)
-        elif processed_message in overall_types:
-            return filter(subjects_types_condition, messages)
-
-    if query == "recent":
-        checker = checker_factory(0, 4)
-
-        def _gen():
-            for i in interface.unfiltered_notifications:
-                potential_date = safe_next(find_dates(i.time_created))
-                potential_date = null_safe_chaining(
-                    potential_date - datetime.now(), "day")
-                if checker(potential_date):
-                    yield notification_message_builder(i)
-        return _gen()
-    else:
-        return _traditional_types()
 
 
 def autoremind():
-    result = autoremind_worker()
+    result = interface.autoremind_worker()
     send_multithreaded(result)
     return result
 
@@ -123,11 +73,6 @@ def send_multithreaded(T, message_object=None, function=None, *args, **kwargs):
             executor.submit(function, message_object, item, *args, **kwargs)
 
 
-try:
-    interface = TelegramInterface()
-except (KeyError, FileNotFoundError):
-    bot.send_message(
-        chat_id, "The moodle webservice is down, I will not respond until a minute or two.")
 
 
 class BotCommands:
@@ -233,7 +178,7 @@ class BotCommands:
     @staticmethod
     def filter_by_type(query):
         def _traditional_types():
-            result = filter_by_type_worker(query)
+            result = interface.filter_by_type_worker(query)
             if result:
                 send_multithreaded(notification_message_builder(i)
                                    for i in result)

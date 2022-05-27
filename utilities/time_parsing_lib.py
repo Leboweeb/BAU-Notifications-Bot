@@ -1,9 +1,7 @@
 from __future__ import annotations
-from collections import Counter
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 import re
-from typing import Callable, Generator, Iterable, Sequence
+from typing import Callable, Generator, Optional, Sequence
 from utilities.common import UnexpectedBehaviourError, add_regex_boundaries, get_group, to_natural_str
 
 
@@ -19,10 +17,6 @@ DATE_WORDS: dict[str, str] = dict(
 
 def datetime_to_dict(dt: datetime) -> datetime_dict: return {
     "year": dt.year, "month": dt.month, "day": dt.day}
-
-
-def replace_dt_with_dict(dt: datetime, dt_dict: datetime_dict):
-    return dt.replace(**dt_dict, tzinfo=None)
 
 
 now = datetime.now()
@@ -60,11 +54,12 @@ def _change_dt(anchor: datetime, operation: str = '-') -> Callable[[datetime_dic
             "months": date.get("month", 0) or date.get("months", 0),
             "years": generate_unit(year_conversion_map, date)
         }
-        # # literally everything works except months because the gregorian calendar is stupid, seriously why the fuck do we use this shit
+        # literally everything works except months because the gregorian calendar is stupid, seriously why the fuck do we use this shit
         transformed_date = anchor - \
             timedelta(days=simplified_dict["days"]) if operation == "-" else anchor + timedelta(
                 days=simplified_dict["days"])
-        return transformed_date.replace(month=anchor.month - simplified_dict["months"], year=anchor.year - simplified_dict["years"]) if operation == "-" else transformed_date.replace(month=anchor.month + simplified_dict["months"], year=anchor.year + simplified_dict["years"])
+        # the month might change if a few days are added, so the anchor's month cannot be taken.
+        return transformed_date.replace(month=transformed_date.month - simplified_dict["months"], year=transformed_date.year - simplified_dict["years"]) if operation == "-" else transformed_date.replace(month=transformed_date.month + simplified_dict["months"], year=transformed_date.year + simplified_dict["years"])
     return convert_unit
 
 
@@ -73,8 +68,8 @@ subtract_from_now = _change_dt(now)
 
 class RelativeDate:
     positive_offsets, negative_offsets = (
-        ("next ", "after", "following", "tomorrow"),
-        ("last", "before", "previous", "yesterday")
+        ("next ", "after", "following"),
+        ("last", "before", "previous")
     )
 
     def __init__(self, string: str, anchor: datetime = now) -> None:
@@ -113,7 +108,7 @@ class RelativeDate:
                 yield self.mode(sentence), sentence
             yield self.mode(sentence)
 
-    def natural_language_mode(self, sentence: str) -> datetime:
+    def natural_language_mode(self, sentence: str) -> Optional[datetime]:
         """
         Splits a single sentence based on english grammar.
         That is, only a single time unit(there can be more than one modifier though) can be in a sentence.
@@ -123,11 +118,10 @@ class RelativeDate:
 
         use the mode_functor method to apply this over several strings (usually a list of sentences)
         """
-        FIND_TIME_UNIT_REGEX = r"((next|after|this|following|ago|before|last|previous|)\s(day|week|month|year|decade|century))|(tomorrow|today|yesterday)"
+        FIND_TIME_UNIT_REGEX = r"((next|after|this|following|ago|before|last|previous|)\s(day|week|month|year|decade|century))|(tomorrow|today|yesterday|before yesterday|after tomorrow)"
         current_unit = get_group(
             re.search(FIND_TIME_UNIT_REGEX, sentence, re.MULTILINE))
 
-        # 0 or 2 matches found (only 1 time unit can be in a sentence)
         def find_offsets():
             def find_in_sentence(seq: Sequence[str]): return re.findall(
                 add_regex_boundaries(seq), sentence)
@@ -137,25 +131,25 @@ class RelativeDate:
                 raise UnexpectedBehaviourError(
                     "exactly 1 type of time unit can be present in a sentence", find_offsets)
             return (p_ve_matches, n_ve_matches)
-        if len(re.findall(FIND_TIME_UNIT_REGEX, sentence, re.MULTILINE)) in range(0, 2, 2) or current_unit is None:
-            raise UnexpectedBehaviourError(
-                "too many or no relative time matches found", RelativeDate)
-
+        # 0 or 2 matches found (only 1 time unit can be in a sentence)
+        if len(re.findall(FIND_TIME_UNIT_REGEX, sentence, re.MULTILINE)) in range(0, 3, 2) or current_unit is None:
+            return None
         dates = {"tomorrow": self.anchor + timedelta(
-            days=1), "today": self.anchor, "yesterday": self.anchor - timedelta(days=1)}
-        
-        # to get the unit immediately without splitting the string
-        current_unit = get_group(re.search("day|week|month|year|decade|century", current_unit))
+            days=1), "today": self.anchor, "yesterday": self.anchor - timedelta(days=1), "after tomorrow": self.anchor + timedelta(days=2), "before yesterday": self.anchor - timedelta(days=2)}
 
         _curr_date = dates.get(current_unit)
-        offsets = find_offsets()
+        if _curr_date:
+            return _curr_date
+        current_unit = re.split("\s", current_unit)[1]
+
+        try:
+            offsets = find_offsets()
+        except UnexpectedBehaviourError:
+            return None
         _transform_date = _change_dt(self.anchor, "+" if offsets[0] else "-")
         # count the number of offsets and increase (or decrease) the
         # anchor, assuming there is only one type of operation happening
-        if not _curr_date:
-            return _transform_date({current_unit : list(filter(None, offsets))[0]})
-        else:
-            return _curr_date
+        return _transform_date({current_unit: list(filter(None, offsets))[0]})
 
     def mode_factory(self):
         if re.search(r"\d+ \w+ ago", self.string):
