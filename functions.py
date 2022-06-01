@@ -1,7 +1,7 @@
 import datefinder
 from datetime import datetime
 from functools import reduce
-from utilities.common import DATA_DIR, Announcement, bool_return, checker_factory, clean_iter, flatten_iter, json, autocorrect, null_safe_chaining, safe_next, string_builder, IO_DATA_DIR
+from utilities.common import DATA_DIR, Announcement, bool_return, checker_factory, clean_iter, flatten_iter, json, autocorrect, null_safe_chaining, safe_next, string_builder, IO_DATA_DIR, to_natural_str
 from utilities.input_filters import notification_cleanup, ALL_NOTIFICATIONS
 
 
@@ -11,7 +11,7 @@ def notification_message_builder(
     strings = [getattr(notification, attr)
                for attr in attrs]
     prefixes = [i.capitalize() for i in attrs]
-    strings.append(notification.time_created)
+    strings.append(to_natural_str(notification.date_created))
     prefixes.append("Time created")
     if custom_message:
         strings[2] = custom_message
@@ -22,8 +22,6 @@ def notification_message_builder(
     ---------------------------------------
 
     """
-
-
 
 
 def search_case_insensitive(query: str, text: str):
@@ -38,8 +36,10 @@ def search_case_insensitive(query: str, text: str):
 
 class TelegramInterface:
     def __init__(self) -> None:
-        exam_types : dict[str,str] =  dict.fromkeys(("quiz", "test", "exam", "grades", "exams", "quizzes", "tests"), "exam") 
-        non_exam_types = dict.fromkeys(("lab", "labs"), "lab") | dict.fromkeys(("project", "projects"), "project")
+        exam_types: dict[str, str] = dict.fromkeys(
+            ("quiz", "test", "exam", "grades", "exams", "quizzes", "tests"), "exam")
+        non_exam_types = dict.fromkeys(("lab", "labs"), "lab") | dict.fromkeys(
+            ("project", "projects"), "project")
         overall_types = exam_types | non_exam_types
         self.overall_types = overall_types
         self.unfiltered_notifications: tuple[Announcement] = ALL_NOTIFICATIONS
@@ -115,7 +115,6 @@ class TelegramInterface:
         result = (notification_message_builder(i) for i in result)
         return tuple(result)
 
-    
     def search_notifications(self, query):
         def _search_announcement(announcement: Announcement, query: str):
             msg = announcement.message.lower()
@@ -136,13 +135,13 @@ class TelegramInterface:
             elif len(messages) == 1:
                 return messages[0]
 
-    def filter_by_type_worker(self,query):
+    def filter_by_type_worker(self, query):
         def _traditional_types():
-            course_mappings =self.course_mappings_dict
-            messages =self.unfiltered_notifications
+            course_mappings = self.course_mappings_dict
+            messages = self.unfiltered_notifications
             processed_message = ""
             try:
-                processed_message =self.name_wrapper(query)
+                processed_message = self.name_wrapper(query)
             except TypeError:
                 processed_message = None
 
@@ -150,7 +149,7 @@ class TelegramInterface:
                 return course_mappings[x.subject_code.split(":")[0]] == processed_message
 
             def subjects_types_condition(
-                x): return x.subject_type == self.overall_types[processed_message]
+                x): return self.overall_types[processed_message] in x.subject_type
 
             if processed_message in flatten_iter(course_mappings.items()):
                 return filter(subjects_codes_condition, messages)
@@ -162,7 +161,8 @@ class TelegramInterface:
 
             def _gen():
                 for i in self.unfiltered_notifications:
-                    potential_date = safe_next(datefinder.find_dates(i.time_created))
+                    potential_date = safe_next(
+                        datefinder.find_dates(i.time_created))
                     potential_date = null_safe_chaining(
                         potential_date - datetime.now(), "day")
                     if checker(potential_date):

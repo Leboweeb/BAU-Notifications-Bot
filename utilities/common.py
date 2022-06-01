@@ -121,11 +121,10 @@ class Announcement:
             "lab", "project", "session"), ("quiz", "test", "exam", "grades", "midterm")
         type_dict = dict.fromkeys(exam_types, "exam") | {
             name: name for name in non_exam_types}
-        unprocessed_subject: Optional[str] = null_safe_chaining(
-            self.title.split(":")[1], "lower", callable=True)
-        subject: Optional[str] = null_safe_chaining(re.search("|".join(flattening_iterator(
-            non_exam_types, exam_types)), unprocessed_subject, re.MULTILINE), "group", callable=True)
-        return type_dict.get(subject, None)
+        title = self.title.split(":")[1].lower()
+        types: list[str] = re.findall(
+            "|".join(flattening_iterator(non_exam_types, exam_types)),title)
+        return set(map(lambda x: type_dict.get(x, None), types))
 
     @property
     def subject(self):

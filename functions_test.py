@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from functools import partial
+import re
 from types import FunctionType
 from typing import Callable, Iterable, Optional, Type
 import unittest
@@ -122,9 +123,24 @@ class SanityChecks(unittest.TestCase):
         begin_test(self, cases=cases,
                    assertions=assertions)
 
+    def test_multiple_type_subjects(self):
+        def generate_subjects(title: str) -> set[Optional[str]]:
+            non_exam_types, exam_types = (
+                "lab", "project", "session"), ("quiz", "test", "exam", "grades", "midterm")
+            type_dict = dict.fromkeys(exam_types, "exam") | {
+                name: name for name in non_exam_types}
+            types: list[str] = re.findall(
+                "|".join(flattening_iterator(non_exam_types, exam_types)), title)
+            return set(map(lambda x: type_dict.get(x, None), types))
+
+        cases, assertions = (("incomplete final exam", "semester grades", "null", "lab final makeup exam", "midterm exam",
+                              "quiz 2 makeup", "final project", "lab session tomorrow", "session date changed"),
+                             ({"exam"}, {"exam"}, set(),  {"lab", "exam"}, {"exam"}, {"exam"}, {"project"}, {"lab", "session"}, {"session"}))
+        begin_test(self, cases, assertions, generate_subjects)
+
 
 class BotCommandsSuite(unittest.TestCase):
-    QUERIES = ("exam","session")
+    QUERIES = ("exam", "session")
 
     def test_date_getter(self):
         test_thing = datetime(2022, 3, 19)
@@ -143,7 +159,8 @@ class BotCommandsSuite(unittest.TestCase):
         t = TelegramInterface()
         for query in BotCommandsSuite.QUERIES:
             self.assertTrue(t.search_notifications(query))
-            self.assertEqual(t.filter_by_type_worker("junk"), None, "Should not fail with junk words")
+            self.assertEqual(t.filter_by_type_worker("junk"),
+                             None, "Should not fail with junk words")
 
     def test_name_wrapper(self):
         t = TelegramInterface()

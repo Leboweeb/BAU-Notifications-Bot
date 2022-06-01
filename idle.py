@@ -5,7 +5,7 @@ import os
 import telebot
 from datefinder import find_dates
 from concurrent.futures import ThreadPoolExecutor
-from functions import TelegramInterface, notification_message_builder, search_notifications
+from functions import TelegramInterface, notification_message_builder
 from utilities.common import autocorrect, checker_factory, WebsiteMeta, null_safe_chaining, IO_DATA_DIR
 
 api_key, chat_id = WebsiteMeta.api_key, WebsiteMeta.public_context
@@ -171,7 +171,7 @@ class BotCommands:
         Searches every notification and returns a "view" if more than one match is found.
         It can also search by notification type (lab, quiz, test, etc...) , see the help text or github page for more information.
         """
-        potential_messages = search_notifications(message)
+        potential_messages = interface.search_notifications(message)
         send_message(None, potential_messages) if potential_messages else send_message(
             None, "No notifications matching this word were found.")
 
@@ -248,6 +248,6 @@ def entry_point(testing=True):
 
 
 if __name__ == '__main__':
-    entry_point(True)
+    entry_point(testing=True)
     # autoremind()
     bot.infinity_polling()

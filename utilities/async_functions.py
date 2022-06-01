@@ -17,6 +17,10 @@ class Course:
     link: str
 
 
+FIND_ABSOLUTE_DATE = r"(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)(\s\d+)?(\s(January|February|March|April|June|July|August|September|October|November|December))?(\s\d+)?"
+abs_re = re.compile(FIND_ABSOLUTE_DATE, re.MULTILINE)
+
+
 def found_explicit_date(collection: tuple[datetime, str]) -> bool:
     def abbreviate(x): return x[:3]
     DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",
@@ -59,12 +63,14 @@ async def get_data(dicts: list[dict]):
     async def _time_delta_worker(announcement: Announcement):
         explicit_date: Optional[datetime]
         DELETE_TZINFO_REGEX = re.compile(r"\d+:\d+", re.MULTILINE)
+        finder = datefinder.DateFinder(
+            base_date=announcement.date_created, first="day")
         explicit_date = null_safe_index(safe_next(
-            filter(found_explicit_date,  datefinder.find_dates(DELETE_TZINFO_REGEX.sub("", announcement.message), source=True, base_date=announcement.date_created))), 0)
+            filter(found_explicit_date, finder.find_dates(DELETE_TZINFO_REGEX.sub("", announcement.message), source=True))), 0)
         now = datetime.now()
         def subtract_from_today(ref: datetime): return (ref - now).days
         announcement.time_delta, announcement.deadline = None, None
-        if "exam" == announcement.subject_type:
+        if "exam" in announcement.subject_type:
             if explicit_date:
                 dt = subtract_from_today(explicit_date)
                 announcement.deadline = to_natural_str(explicit_date)
@@ -81,8 +87,10 @@ async def get_data(dicts: list[dict]):
                     announcement.time_delta = _date
                     announcement.deadline = to_natural_str(_dt)
                 else:
-                    week_number = get_group(re.search("week\s+\d+", announcement.message.lower(), re.MULTILINE))
-                    announcement.time_delta, announcement.deadline = (subtract_from_today((_week := find_week_of_datetime(week=int(re.split("\s+", week_number)[1])))) ,to_natural_str(_week)) if week_number else None, None
+                    week_number = get_group(
+                        re.search("week\s+\d+", announcement.message.lower(), re.MULTILINE))
+                    announcement.time_delta, announcement.deadline = (subtract_from_today((_week := find_week_of_datetime(
+                        week=int(re.split("\s+", week_number)[1])))), to_natural_str(_week)) if week_number else None, None
     await collect_tasks(_time_delta_worker, objects)
     return objects
 
