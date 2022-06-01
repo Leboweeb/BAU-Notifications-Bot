@@ -126,3 +126,4 @@ bot_temp/
 *.lockfile
 textfile/
 *env*
+/bot_data_stuff
