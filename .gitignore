@@ -126,3 +126,8 @@ bot_temp/
 *.lockfile
 textfile/
 *env*
+*.html
+bot_setup.py
+.lcov
+scratch_files
+*.pdf

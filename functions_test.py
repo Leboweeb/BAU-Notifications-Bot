@@ -1,109 +1,193 @@
-import asyncio
-import json
+from datetime import datetime, timedelta
+from functools import partial
+import re
+from types import FunctionType
+from typing import Callable, Iterable, Optional, Type
 import unittest
-from functions import AsyncFunctions, FunctionFridge, file_handler, InputFilters, pad_iter, string_builder
+from functions import TelegramInterface
+from utilities.async_functions import prep_courses, datefinder
+from utilities.common import UnexpectedBehaviourError, coerce_to_none, flattening_iterator, my_format, pad_iter, run, to_natural_str
+from utilities.time_parsing_lib import RelativeDate
 
 
-def run(x): return asyncio.run(x)
+def begin_test(obj: unittest.TestCase, cases: list, assertions: tuple, function: FunctionType = None, messages: Optional[Iterable[str]] = None):
+    if function:
+        cases = list(function(i) for i in cases)
 
-
-def run_suites(suite=None, func=None):
-    if all((i == None for i in (suite, func))):
-        unittest.main()
-    else:
-        suite = unittest.TestSuite()
-        suite.addTest(suite(func.__name__))
-        runner = unittest.TextTestRunner()
-        runner.run(suite)
-
-
-def test_prepper(cases, assertions, messages):
-    for i,j,k in zip(cases,assertions,messages):
-        unittest.TestCase.assertEqual(i,j,k)
+    def _check(case, assertion, message=None):
+        if not message:
+            obj.assertEqual(case, assertion)
+        else:
+            obj.assertEqual(case, assertion, message)
+    messages = (f"Case {i}" for i, _ in enumerate(
+        cases)) if not messages else messages
+    container = zip(cases, assertions, messages)
+    for i in container:
+        _check(*i)
 
 
 class SanityChecks(unittest.TestCase):
 
-    
-    def test_fridge_class(self):
-        def func_1(x): return x
-        def func_2(x): return x**2
-        fridge = FunctionFridge((func_1, 1), (func_2, 2))
-        fridge.get_plate(func_1).run()
-        self.assertEqual(len((fridge.__dict__)), 2,
-                         "Should work for two regular functions")
-        fridge = FunctionFridge((func_1, 1), (func_1, 1))
-        dummy_list = (fridge.get_plate(func_1)*2)
-        val1, val2 = dummy_list
+    def test_basic_functions(self):
         self.assertEqual(
-            val1, val2, "Should store and run the same function twice with mul and rmul methods")
-        val1, val2 = (2 * fridge.get_plate(func_1))
-        self.assertEqual(
-            val1, val2, "Should store and run the same function twice with mul and rmul methods")
+            list(coerce_to_none(0, [], set(), tuple(), {})), [None] * 5)
+        self.assertEqual(tuple(coerce_to_none(
+            1, None, 0, object)), (1, None, None, object))
 
-        async def main(*args):
-            return args
+    def test_pad_iter(self):
+        cases = (["fag"], "fag", (object, object), (object), 1, False)
+        assertions = (("fag", None), ("fag", None), (object, object),
+                      (object, None), (1, None), (False, None))
+        messages = ("Should handle a list of strings", "Should handle a string", "Should handle a tuple of objects",
+                    "Should handle a tuple of objects", "Should handle numbers", "Should handle boolean values")
+        self.assertEqual(pad_iter((1, 2, 3), (False,) * 4), (1,
+                         2, 3, False), "Should work without an amount as well")
+        cases = tuple(pad_iter(i, None, 2) for i in cases)
+        begin_test(self, cases, assertions, messages=messages)
 
-        fridge = FunctionFridge((main, (1, 2, 3, 4)))
-        res = fridge.get_plate(main)
-        res = res.run()
-        self.assertEqual(res, (1, 2, 3, 4),
-                         "Should run async coroutines as well and handle special *args and **kwargs syntax")
-        self.assertEqual(FunctionFridge().__dict__, {},
-                         "Should handle no input at all")
+    def test_flattening_iterator(self):
+        def flattener_proxy(x): return tuple(flattening_iterator(*x))
+        cases, assertions, messages = [
+            ("Meow", True, [1, 2]), ((i for i in range(2)), "Penos", object)], (("Meow", True, 1, 2), (0, 1, "Penos", object)), ("Should Ignore strings", "Should exhaust generators as well")
+        begin_test(self, cases, assertions, flattener_proxy, messages)
 
-        def fag(): print(5)
-        fridge = FunctionFridge(fag)
-        self.assertEqual(fridge.get_plate(fag).run(), None,
-                         "Should handle running a function with no arguments.")
+    def test_course_objects(self):
+        courses: set = run(prep_courses())
+        my_format(courses, "Courses set (each course object is unique)")
+        self.assertTrue(courses,
+                        "Should get the other courses")
+        self.assertTrue(len(courses) > 4)
 
-    def test_utility_functions(self):
-        def test_pad_iter():
-            cases = [pad_iter((1, 2, 3), 1, 3), pad_iter((1, 2, 3), (1, 2, 3), 3), pad_iter(
-                1, (1, 2, 3)), pad_iter(1, 2, 5), pad_iter(object, (None, None)), pad_iter("fag", 2, 2)]
-            assertions = [(1, 2, 3), (1, 2, 3), (1, 1, 2, 3),
-                        (1, 2, 2, 2, 2, 2), (object, None, None), ("fag", 2, 2)]
-            messages = ["Should return an unpadded iterable", "Should return an unpadded iterable", "Should handle non-iterables as well",
-                        "Should handle non-iterables as well", "Should handle arbitrary data types", "Should handle strings as well"]
-            for i,j,k in zip(*[cases,assertions,messages]):
-                self.assertEqual(i,j,k)
-        def test_str_builder():
-            self.assertEqual(string_builder(set(),set()),"", "Should handle empty iterables")
-            self.assertEqual(string_builder(object,object),None, "Should handle incorrect inputs")
-            self.assertEqual(string_builder(("1","2","3"),("Fag","bag"),separator=""),"Fag : 1bag : 2","Should ignore extra arguments to each side (they should be symmetrical)")
-            self.assertEqual(string_builder([1,2],[str(i) for i in range(1,3)],separator=""),"1 : 12 : 2","Should return in an expected form.")
-            self.assertEqual(string_builder([1,2,None],[1,2,3],""),"1 : 12 : 2","Should filter out null values")
-            self.assertEqual(string_builder([1,2,3],[1,2,None],""),"1 : 12 : 2","Should filter out null values")
-        test_str_builder()
+    def test_date_calculator(self):
+        anchor = datetime(2022, 3, 25)
+        str_anc = to_natural_str(anchor)
+        sentences = ("1 day ago",
+                     "1 year ago",
+                     "2 months ago",
+                     "1 week, 1 day ago",
+                     "1 week ,1 day ago , and 1 month",
+                     "1 century ago",
+                     "1 decade ago""",
+                     "1",
+                     "1234411 ; ';' ;''''",
+                     "___________")
+        obj = RelativeDate(".".join(sentences), anchor=anchor)
+        assertions = ("Thursday March 24 2022",
+                      "Thursday March 25 2021",
+                      "Tuesday January 25 2022",
+                      "Thursday March 17 2022",
+                      "Thursday February 17 2022",
+                      "Saturday March 25 1922",
+                      "Sunday March 25 2012",
+                      str_anc,
+                      str_anc,
+                      str_anc,
+                      str_anc)
+        begin_test(self, tuple(
+            map(to_natural_str, obj.generate_results())), assertions)
+        sentences = ("yesterday",
+                     "before yesterday",
+                     "last year",
+                     "last week",
+                     "before last month",
+                     "last century",
+                     "previous decade",
+                     "tomorrow",
+                     "after tomorrow",
+                     "today",
+                     "next week",
+                     " after next week",
+                     "next month",
+                     "following year",
+                     "after this decade",
+                     "after this century")
 
-    def setUp(self) -> None :
-        pass
-        # res = file_handler("results.json")
-        # try:
-            # self.data = json.loads(res)[0]["data"]["notifications"]
-        # except KeyError:
-            # raise ValueError("The moodle webservice is down, try again")
+        assertions = ("Thursday March 24 2022",
+                      "Wednesday March 23 2022",
+                      "Thursday March 25 2021",
+                      "Friday March 18 2022",
+                      "Tuesday January 25 2022",
+                      "Saturday March 25 1922",
+                      "Sunday March 25 2012",
+                      "Saturday March 26 2022",
+                      "Sunday March 27 2022",
+                      str_anc,
+                      to_natural_str(anchor + timedelta(7)),
+                      to_natural_str(anchor + timedelta(14)),
+                      "Monday April 25 2022",
+                      to_natural_str(anchor.replace(year=anchor.year + 1)),
+                      to_natural_str(anchor.replace(year=anchor.year + 10)),
+                      to_natural_str(anchor.replace(year=anchor.year + 100)))
+        obj = RelativeDate(".".join(sentences), anchor=anchor)
+        cases = tuple(map(to_natural_str, obj.generate_results()))
+        begin_test(self, cases=cases,
+                   assertions=assertions)
 
-    def test_thing(self):
-        objects = asyncio.run(AsyncFunctions.get_data(self.data))
-        self.assertTrue(all(i for i in objects))
+    def test_multiple_type_subjects(self):
+        def generate_subjects(title: str) -> set[Optional[str]]:
+            non_exam_types, exam_types = (
+                "lab", "project", "session"), ("quiz", "test", "exam", "grades", "midterm")
+            type_dict = dict.fromkeys(exam_types, "exam") | {
+                name: name for name in non_exam_types}
+            types: list[str] = re.findall(
+                "|".join(flattening_iterator(non_exam_types, exam_types)), title)
+            return set(map(lambda x: type_dict.get(x, None), types))
 
-    def test_api(self):
-        def update_text(): return file_handler("mappings.json")
-        try:
-            cont = update_text()
-        except FileNotFoundError:
-            InputFilters.mapping_init()
-            cont = update_text()
-        if "view.php" in cont:
-            run(AsyncFunctions.get_titles())
+        cases, assertions = (("incomplete final exam", "semester grades", "null", "lab final makeup exam", "midterm exam",
+                              "quiz 2 makeup", "final project", "lab session tomorrow", "session date changed"),
+                             ({"exam"}, {"exam"}, set(),  {"lab", "exam"}, {"exam"}, {"exam"}, {"project"}, {"lab", "session"}, {"session"}))
+        begin_test(self, cases, assertions, generate_subjects)
 
-        self.assertTrue("view.php" not in cont)
+
+class BotCommandsSuite(unittest.TestCase):
+    QUERIES = ("exam", "session")
+
+    def test_date_getter(self):
+        test_thing = datetime(2022, 3, 19)
+        cases = ("Saturday March 19", "Sat march 19",
+                 "sat March 19", "sat mar 19", "Saturday March 19 2022")
+        for case in cases:
+            self.assertTrue(test_thing in datefinder.find_dates(
+                case), "Should be equal to the Saturday datetime object")
+
+    # fix a few inaccuracies
+    # def test_autoremind(self):
+    #     stuff = autoremind_worker()
+    #     self.assertTrue(stuff, "Should not be empty")
+
+    def test_search_and_filter(self):
+        t = TelegramInterface()
+        for query in BotCommandsSuite.QUERIES:
+            self.assertTrue(t.search_notifications(query))
+            self.assertEqual(t.filter_by_type_worker("junk"),
+                             None, "Should not fail with junk words")
+
+    def test_name_wrapper(self):
+        t = TelegramInterface()
+        # FIRST_NOTIFICATION = t.notifications[0]
+        cases = ("math 283",
+                 "electric", "comp 225", "blah blah")
+        assertions = ("Differential Equations",
+                      "electric circuits 1", "COMP225", "blah blah")
+
+        messages = ("Should handle course codes",
+                    "Should handle course names",
+                    "Should handle capitalized course names",
+                    "Should get last match if multiple courses collide",
+                    "Should not fail on junk names")
+        essential_tests = tuple(t.name_wrapper(i) for i in cases[:-1])
+        begin_test(self, essential_tests, assertions, messages=messages)
+        self.assertNotEqual(
+            messages, None, "Should show notifications for cases")
+        self.assertIsNone(t.filter_by_type_worker(cases[-1]))
 
 
 if __name__ == "__main__":
-    # unittest.main()
-    suite = unittest.TestSuite()
-    suite.addTest(SanityChecks(SanityChecks.test_utility_functions.__name__))
-    runner = unittest.TextTestRunner()
-    runner.run(suite)
+    unittest.main()
+    # suite = unittest.TestSuite()
+    # current_class = SanityChecks
+    # current_function = SanityChecks.test_flattening_iterator
+    # suite.addTest(current_class(
+    #     current_function.__name__))
+    # runner = unittest.TextTestRunner()
+    # runner.run(suite)
