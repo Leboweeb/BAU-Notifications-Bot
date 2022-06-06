@@ -48,7 +48,7 @@ For example, sending h or help to the group chat will execute the help command.
 ### How To Host This Bot
 
 If you ever want to host this bot for contribution (or independent development purposes), a guided init.py helper will display a dialogue to fill the required data for you.
-Note that your moodle password and username are required because it can't access every notification ever. However, most students in the same share the same subjects so getting your notifications will be of use to them too.
+Note that your moodle password and username are required because it can't access every notification ever. However, most students in the same year share the same subjects so getting your notifications will be of use to them too.
 
 ~~NOTE: This is currently not possible at the moment, but it should be in the near future.~~
 
