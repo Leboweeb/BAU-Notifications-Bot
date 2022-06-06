@@ -1,7 +1,5 @@
 # FAQ
 
-
-
 1- Why would I need this? I can already get notifications from the moodle website.
 
 You wouldn't believe how bloated the university website is. Through special means, I can cache the content gotten from the university website and send it to you ~ 10x faster even in the worst case. Also, this is more than just a fast way to get notifications because this bot automatically reminds you of exams and other notifications that are a week away from their deadlines. That alone is enough to justify using (or even making) this bot.
@@ -12,7 +10,6 @@ This bot is hosted on my laptop, so I actually need to launch the bot for it to 
 > ⚠️ You can expect this bot to be available from 3PM-12AM.
 If you know another way to do this, please let me know.
 Otherwise, you can host your own instance of the bot and the personal version.
-
 
 2 - How do I use this?
 
@@ -33,13 +30,13 @@ All of the code I use is freely available in this repository, make sure to send 
 
 ## Features and Roadmap
 
--[x]  Autocorrects any misspelled command and prompts the user to either accept or reject the correction.
--[x]  Filter announcements by subject code, name, or type(exam, lab , etc...) ,  and/or get the most recent notifications.
--[x]  Search for keywords in all notifications.
--[x]  Reminds you of any important exams or projects that are 1 week away from their deadline.
--[x]  Sends you all the zoom and meeting links that have been sent in a text file.
--[]   Get all unsolved homework on Moodle.
--[]   *Extremely* quick speeds.
+- [x]  Autocorrects any misspelled command and prompts the user to either accept or reject the correction.
+- [x]  Filter announcements by subject code, name, or type(exam, lab , etc...) ,  and/or get the most recent notifications.
+- [x]  Search for keywords in all notifications.
+- [x]  Reminds you of any important exams or projects that are 1 week away from their deadline.
+- [x]  Sends you all the zoom and meeting links that have been sent in a text file.
+- [ ]   Get all unsolved homework on Moodle.
+- [ ]   *Extremely* quick speeds.
 
 ### What Are Aliases?
 
