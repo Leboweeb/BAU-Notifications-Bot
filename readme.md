@@ -33,7 +33,7 @@ All of the code I use is freely available in this repository, make sure to send 
 
 ## Features and Roadmap
 
--[x]  Autocorrects any misspelled command and prompts the user to either accept or reject the correction
+-[x]  Autocorrects any misspelled command and prompts the user to either accept or reject the correction.
 -[x]  Filter announcements by subject code, name, or type(exam, lab , etc...) ,  and/or get the most recent notifications.
 -[x]  Search for keywords in all notifications.
 -[x]  Reminds you of any important exams or projects that are 1 week away from their deadline.
