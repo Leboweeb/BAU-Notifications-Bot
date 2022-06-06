@@ -40,7 +40,7 @@ All of the code I use is freely available in this repository, make sure to send 
 
 ### What Are Aliases?
 
-Aliases are a way to call a command without typing out the full command
+Aliases are a way to call a command without typing out the full command.
 For example, sending h or help to the group chat will execute the help command.
 
 ## Contributing
