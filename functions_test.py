@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
-from functools import partial
 import re
 from types import FunctionType
-from typing import Callable, Iterable, Optional, Type
+from typing import Iterable, Optional
 import unittest
 from functions import TelegramInterface
 from utilities.async_functions import prep_courses, datefinder
-from utilities.common import UnexpectedBehaviourError, coerce_to_none, flattening_iterator, my_format, pad_iter, run, to_natural_str
+from utilities.common import coerce_to_none, flattening_iterator, my_format, pad_iter, run, to_natural_str
 from utilities.time_parsing_lib import RelativeDate
 
 
@@ -139,8 +138,10 @@ class SanityChecks(unittest.TestCase):
         begin_test(self, cases, assertions, generate_subjects)
 
 
+t = TelegramInterface()
+
+
 class BotCommandsSuite(unittest.TestCase):
-    QUERIES = ("exam", "session")
 
     def test_date_getter(self):
         test_thing = datetime(2022, 3, 19)
@@ -150,17 +151,14 @@ class BotCommandsSuite(unittest.TestCase):
             self.assertTrue(test_thing in datefinder.find_dates(
                 case), "Should be equal to the Saturday datetime object")
 
-    # fix a few inaccuracies
-    # def test_autoremind(self):
-    #     stuff = autoremind_worker()
-    #     self.assertTrue(stuff, "Should not be empty")
+    def test_search_notifications(self):
+        begin_test(self, ("exam", "lab"), (True,) * 3, lambda c: bool(t.search_notifications(c)))
 
-    def test_search_and_filter(self):
-        t = TelegramInterface()
-        for query in BotCommandsSuite.QUERIES:
-            self.assertTrue(t.search_notifications(query))
-            self.assertEqual(t.filter_by_type_worker("junk"),
-                             None, "Should not fail with junk words")
+    def test_filter(self):
+        begin_test(self, ("exam", "lab","MATH", "math",
+                   "prog", "PROG"), (True,) * 8, lambda c: bool(t.filter_by_type_worker(c)))
+        self.assertEqual(t.filter_by_type_worker("junk"),
+                         None, "Should not fail with junk words")
 
     def test_name_wrapper(self):
         t = TelegramInterface()

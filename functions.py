@@ -1,8 +1,9 @@
-import datefinder
-from datetime import datetime
+import itertools
+from typing import Iterable
 from functools import reduce
-from utilities.common import DATA_DIR, Announcement, bool_return, checker_factory, clean_iter, flatten_iter, json, autocorrect, null_safe_chaining, safe_next, string_builder, IO_DATA_DIR, to_natural_str
+from utilities.common import Announcement, bool_return, checker_factory, clean_iter, flatten_iter, json, autocorrect, string_builder, IO_DATA_DIR, to_natural_str
 from utilities.input_filters import notification_cleanup, ALL_NOTIFICATIONS
+from utilities.time_parsing_lib import now
 
 
 def notification_message_builder(
@@ -45,7 +46,8 @@ class TelegramInterface:
         self.unfiltered_notifications: tuple[Announcement] = ALL_NOTIFICATIONS
         self.notifications = notification_cleanup(
             self.unfiltered_notifications)
-        self.course_mappings_dict = json.loads(IO_DATA_DIR("mappings.json"))
+        self.course_mappings_dict: dict[str, str] = json.loads(
+            IO_DATA_DIR("mappings.json"))
         self.stripped_course_numbers = list(map(lambda x: x.split(
             "-")[0].lower(), self.course_mappings_dict.values()))
         self.update_links_and_meetings()
@@ -103,28 +105,17 @@ class TelegramInterface:
     def autoremind_worker(self):
 
         is_relatively_recent = checker_factory(0, 7)
+        return filter(is_relatively_recent, self.notifications)
 
-        def override(
-            x): return "next week" in x.message and x.subject_type is not None and x.subject_type != "session"
-
-        def notification_gen(T):
-            for notification in T:
-                if override(notification) or is_relatively_recent(notification.time_delta):
-                    yield notification
-        result = notification_gen(self.notifications)
-        result = (notification_message_builder(i) for i in result)
-        return tuple(result)
-
-    def search_notifications(self, query):
+    def search_notifications(self, query) -> str | None:
         def _search_announcement(announcement: Announcement, query: str):
             msg = announcement.message.lower()
             highlighted_string = search_case_insensitive(
                 query, announcement.message)
             if msg and highlighted_string:
                 return notification_message_builder(announcement, custom_message=highlighted_string)
-        messages = (_search_announcement(i, query)
-                    for i in ALL_NOTIFICATIONS)
-        messages = clean_iter(messages)
+        messages: list[Announcement] = clean_iter((_search_announcement(i, query)
+                                                   for i in ALL_NOTIFICATIONS), list)
         if query:
             if len(messages) > 1:
                 messages_str = string_builder(
@@ -133,9 +124,12 @@ class TelegramInterface:
                 messages_str = f"{messages_str}\n{prompt}"
                 return messages_str
             elif len(messages) == 1:
-                return messages[0]
+                return messages[0].message
 
-    def filter_by_type_worker(self, query):
+        return None
+
+    def filter_by_type_worker(self, query: str) -> Iterable[Announcement] | None:
+
         def _traditional_types():
             course_mappings = self.course_mappings_dict
             messages = self.unfiltered_notifications
@@ -151,22 +145,13 @@ class TelegramInterface:
             def subjects_types_condition(
                 x): return self.overall_types[processed_message] in x.subject_type
 
-            if processed_message in flatten_iter(course_mappings.items()):
+            if processed_message in itertools.chain.from_iterable(course_mappings.items()):
                 return filter(subjects_codes_condition, messages)
             elif processed_message in self.overall_types:
                 return filter(subjects_types_condition, messages)
 
         if query == "recent":
-            checker = checker_factory(0, 4)
-
-            def _gen():
-                for i in self.unfiltered_notifications:
-                    potential_date = safe_next(
-                        datefinder.find_dates(i.time_created))
-                    potential_date = null_safe_chaining(
-                        potential_date - datetime.now(), "day")
-                    if checker(potential_date):
-                        yield notification_message_builder(i)
-            return _gen()
+            f = checker_factory(0, 7)
+            return filter(lambda dt:  f((now - dt.date_created).days), self.unfiltered_notifications)
         else:
             return _traditional_types()

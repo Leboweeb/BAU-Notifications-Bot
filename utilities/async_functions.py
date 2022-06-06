@@ -70,7 +70,7 @@ async def get_data(dicts: list[dict]):
         now = datetime.now()
         def subtract_from_today(ref: datetime): return (ref - now).days
         announcement.time_delta, announcement.deadline = None, None
-        if "exam" in announcement.subject_type:
+        if "exam" in announcement.subject_type or "project" in announcement.subject_type:
             if explicit_date:
                 dt = subtract_from_today(explicit_date)
                 announcement.deadline = to_natural_str(explicit_date)

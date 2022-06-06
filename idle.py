@@ -2,14 +2,16 @@
 Bot listens to commands here.
 """
 import os
+from typing import Callable, Iterable, Optional, TypeVar
 import telebot
-from datefinder import find_dates
 from concurrent.futures import ThreadPoolExecutor
 from functions import TelegramInterface, notification_message_builder
-from utilities.common import autocorrect, checker_factory, WebsiteMeta, null_safe_chaining, IO_DATA_DIR
+from utilities.common import autocorrect, WebsiteMeta, IO_DATA_DIR, bool_return
 
 api_key, chat_id = WebsiteMeta.api_key, WebsiteMeta.public_context
-
+testing = dict.fromkeys(("true", "True", "T", "yes", "y", "Yes"), True).get(
+    IO_DATA_DIR("settings.cfg").split("=")[1], False)
+chat_id = WebsiteMeta.testing_chat_context if testing else WebsiteMeta.public_context
 bot = telebot.TeleBot(api_key)
 
 intro = """
@@ -25,6 +27,9 @@ Hello ! To start using me, simply write a command in plain text and I will do my
 
 """
 
+T = TypeVar("T")
+def auto_split(msg: str): return telebot.util.smart_split(msg, 3000)
+
 
 try:
     interface = TelegramInterface()
@@ -33,80 +38,75 @@ except (KeyError, FileNotFoundError):
         chat_id, "The moodle webservice is down, I will not respond until a minute or two.")
 
 
-
 def autoremind():
     result = interface.autoremind_worker()
     send_multithreaded(result)
     return result
 
 
-def send_message(message, text, mode=None):
-    if message is None:
-        bot.send_message(chat_id, text, mode)
-    try:
-        bot.send_message(message.chat.id, text, parse_mode=mode)
-    except AttributeError:
-        bot.send_message(message, text, parse_mode=mode)
+def send_message(text: str):
+    bot.send_message(chat_id, text)
 
 
-def get_chat_id(message):
-    return message.chat.id
+def wrap_result(res: Optional[str], fail_message: str):
+    # handle both Announcement objects and strings
+    send_multithreaded(auto_split(res)) if res else send_message(fail_message)
 
 
-def map_aliases(name: str):
-    default_aliases : tuple[str,...] = (name, name[0])
+def map_aliases(name: str) -> dict[str, str]:
+    default_aliases: tuple[str, ...] = (name, name[0])
     aliases = default_aliases
+
+    def sort_by_alpha_order(chr1: str, chr2: str):
+        return chr(min(ord(chr1), ord(chr2)))
+
     if "_" in name:
         split = name.split("_")
-        if len(split) == 2:
-            aliases = (name, split[1], chr(
-                min(ord(split[1][0]), ord(name[0]))))
+        if len(split) > 1:
+            aliases = (name, split[0], sort_by_alpha_order(
+                split[0][0], name[0]), split[1], sort_by_alpha_order(split[1][0], name[0]))
 
     return {alias: name for alias in aliases}
 
 
-def send_multithreaded(T, message_object=None, function=None, *args, **kwargs):
-    if function is None:
-        function = send_message
+def send_multithreaded(T: Iterable[str], *args, **kwargs):
     with ThreadPoolExecutor() as executor:
         for item in T:
-            executor.submit(function, message_object, item, *args, **kwargs)
-
-
+            executor.submit(send_message, item, *args, **kwargs)
 
 
 class BotCommands:
-    commands : list[str]
-    aliases : dict[str, str]
+    bot_commands: list[str]
+    aliases: dict[str, str]
+
     def __init__(self) -> None:
-        BotCommands.commands = [func for func in dir(BotCommands) if callable(
-        getattr(BotCommands, func)) and not func.startswith("__")]
-        self.last_command = None
+        BotCommands.bot_commands = [func for func in dir(BotCommands) if callable(
+            getattr(BotCommands, func)) and not func.startswith("__")]
+        self.last_command: Callable[[str], None]
         self.last_argument = ""
         self.interactive = False
         BotCommands.aliases = {}
-        aliases_dict = [map_aliases(name) for name in BotCommands.commands]
+        aliases_dict = [map_aliases(name) for name in BotCommands.bot_commands]
         for alias in aliases_dict:
             BotCommands.aliases |= alias
 
     @staticmethod
-    def meeting_links():
+    def meeting_links(message):
         """
         A convenience function to send the zoom/teams meeting links of every subject in a text file.
         """
         interface.update_links_and_meetings()
-        with open("links_and_meetings.json") as f:
-            string_to_be_processed = f.read()
+        string_to_be_processed = IO_DATA_DIR("links_and_meetings.json")
         IO_DATA_DIR("links_and_meetings.txt", "w", string_to_be_processed)
         bot.send_document(chat_id, document=open(
-            "links_and_meetings.txt", "rb"))
+            "./bot_data_stuff/links_and_meetings.txt", "rb"))
 
     @staticmethod
-    def help():
+    def help(message):
         """
         Displays relevant help text.
         """
-        send_message(None, """
+        send_message("""
         Features:
 
         * Automatically filters out unimportant notifications with the /important or /i command and sends them in a digestible format.
@@ -131,39 +131,37 @@ class BotCommands:
         """)
 
     @staticmethod
-    def important_notifications():
+    def important(message):
         """
         Returns notifications representing exams, quizzes, exam deadlines, labs, etc.. in no particular order.
         If you want to filter notifications by type, call the search function with an argument.
         """
         gen = (notification_message_builder(i)
                for i in interface.notifications)
-        send_multithreaded(gen, None)
+        send_message("\n".join(gen))
 
     @staticmethod
-    def show_commands():
+    def commands(message):
         """
         Displays every available command and its description.
         """
         def _descriptions():
-            for i in BotCommands.commands:
+            for i in BotCommands.bot_commands:
                 func = getattr(BotCommands, i)
                 aliases = list(map_aliases(i).keys())[1:]
                 yield f"Aliases : {aliases} \n{i} : {func.__doc__} "
 
         messages = "\n".join(list(_descriptions(
         )))
-        send_message(None, messages)
+        send_message(messages)
 
     @staticmethod
-    def remind():
+    def remind(message):
         """
         Sends notifications that are at most  1 week away from their deadline.
         """
         stuff = autoremind()
-        print(stuff)
-        if not stuff:
-            send_message(None, "No urgent notifications found")
+        wrap_result(stuff, "No urgent notifications found")
 
     @staticmethod
     def search(message: str):
@@ -172,82 +170,72 @@ class BotCommands:
         It can also search by notification type (lab, quiz, test, etc...) , see the help text or github page for more information.
         """
         potential_messages = interface.search_notifications(message)
-        send_message(None, potential_messages) if potential_messages else send_message(
-            None, "No notifications matching this word were found.")
+        wrap_result(potential_messages,
+                    "No notifications matching this query were found.")
 
     @staticmethod
-    def filter_by_type(query):
-        def _traditional_types():
-            result = interface.filter_by_type_worker(query)
-            if result:
-                send_multithreaded(notification_message_builder(i)
-                                   for i in result)
-            else:
-                send_message(None, "No notifications of that type were found")
-        if query == "recent":
-            checker = checker_factory(0, 4)
-            send_multithreaded(notification_message_builder(
-                i) for i in interface.unfiltered_notifications if checker(null_safe_chaining(next(find_dates(i.time_created), None), "day")))
-        else:
-            _traditional_types()
+    def filter_by_type(query: str):
+        """
+        Filter notifications by 3 categories:
+
+        recent : gets notifications that have been posted at most one week away from now.
+
+        course code or name : gets all notifications that match the subject code or name. (for example, filter comp 208 or filter programming will get all notifcations
+        that correspond to programming I)
+
+        subject type : gets all notifications that correspond to a notification type (exam, project, lab , etc...). For example, filter lab will get all
+
+        notifications from a subject's lab (note that lab exams can be found from both filter exam and filter lab so certain types may overlap)
+        """
+
+        res = bool_return(interface.filter_by_type_worker(query), "")
+        final_res = "\n".join(map(str, res))
+        wrap_result(
+            final_res, "No notifications matching this filter were found")
 
     @staticmethod
-    def hot_reload():
-        pass
+    def update(message):
+        """
+        Refreshes notifications automatically
+        """
+        send_message("Updating notifications")
+        os.chdir("/".join(__file__.split("/")[:-1]))
+        os.system("python3 endpoint.py")
+        send_message("Done updating notifications")
 
 
 c = BotCommands()
 
 
-def func_caller(func, arguments):
-    try:
-        func(arguments)
-    except TypeError:
-        func()
-
-
 @bot.message_handler(content_types=["text"])
 def language_interpreter(message: telebot.types.Message):
-    def execute_bot_command(arg): return func_caller(c.last_command, arg)
-    def map_to_function(m): return getattr(BotCommands, c.aliases[m])
+    def get_fn(f: str): return getattr(c, f)
     thing = message.text.lower()
-    function = thing.split(" ")[0].strip()
-    argument = thing[len(function) + 1:].strip()
-    in_aliases = function in c.aliases
+    function, *_ = thing.split(" ")
+    argument = " ".join(_)
+    def in_aliases(): return function in c.aliases
     phrases = ("kif besta3mlo", "shou ba3mel", "shou hayda", "what is this")
     responses = ("yes", "y", "no", "n")
     if any(i == thing for i in phrases) or "use this" in thing:
-        send_message(message, intro)
-    elif in_aliases:
-        c.last_command = map_to_function(function)
-        execute_bot_command(argument)
+        send_message(intro)
+    elif in_aliases():
+        c.last_command = get_fn(c.aliases[function])
+        c.last_command(argument)
     elif function in responses and c.interactive:
         if function in responses[2:]:
-            send_message(message, "Abort.")
+            send_message("Abort.")
         else:
-            func_caller(execute_bot_command, c.last_argument)
-    elif not in_aliases:
+            c.last_command(c.last_argument)
+    elif not in_aliases():
         corrected: str = autocorrect(c.aliases, function)
         if corrected:
-            c.last_command = map_to_function(corrected)
+            c.last_command = get_fn(corrected)
             c.last_argument = argument
             send_message(
-                message, f"{message.text} not recognized, did you mean {corrected} ? Type [y]es to execute or [n]o to abort")
+                f"{message.text} not recognized, did you mean {corrected} ? Type [y]es to execute or [n]o to abort")
             c.interactive = True
 
 
-def entry_point(testing=True):
-    global chat_id
-    chat_id = WebsiteMeta.testing_chat_context if testing else WebsiteMeta.public_context
-
-    def update_notifications():
-        os.chdir("/".join(__file__.split("/")[:-1]))
-        os.system("python3 endpoint.py")
-    # update_notifications()
-    # print("Done updating notifications")
-
-
 if __name__ == '__main__':
-    entry_point(testing=True)
     # autoremind()
     bot.infinity_polling()

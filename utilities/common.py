@@ -26,7 +26,10 @@ logging.basicConfig(
     filemode="w")
 logger = logging.getLogger()
 
+
 def to_natural_str(dt: datetime): return dt.strftime("%A %B %d %Y")
+
+
 NOT_STRING = TypeVar("NOT_STRING", list, dict, set, tuple)
 
 
@@ -58,6 +61,7 @@ def file_handler(relative_path: pathlib.Path | None = None):
 
 IO_DATA_DIR = file_handler(DATA_DIR)
 
+
 def string_builder(strings: Iterable, prefixes: Iterable,
                    separator: str = "\n") -> str:
     """
@@ -69,21 +73,23 @@ def string_builder(strings: Iterable, prefixes: Iterable,
                 yield f"{prefix} : {string}"
     return separator.join(filter(None, built_strings()))
 
+
 @dataclass
 class Announcement:
     title: str
     message: str
     time_created: int
-    deadline: Optional[str]= field(init=False)
-    time_delta: Optional[int]= field(init=False)
+    deadline: Optional[str] = field(init=False)
+    time_delta: Optional[int] = field(init=False)
 
     def __post_init__(self):
-        self.message = self.message.split("---------------------------------------------------------------------")[1]
-    
+        self.message = self.message.split(
+            "---------------------------------------------------------------------")[1]
+
     def __str__(self) -> str:
         attrs = ("title", "subject", "message", "deadline")
         strings = [getattr(self, attr)
-                for attr in attrs]
+                   for attr in attrs]
         prefixes = [i.capitalize() for i in attrs]
         strings.append(to_natural_str(self.date_created))
         prefixes.append("Time created")
@@ -123,7 +129,7 @@ class Announcement:
             name: name for name in non_exam_types}
         title = self.title.split(":")[1].lower()
         types: list[str] = re.findall(
-            "|".join(flattening_iterator(non_exam_types, exam_types)),title)
+            "|".join(flattening_iterator(non_exam_types, exam_types)), title)
         return set(map(lambda x: type_dict.get(x, None), types))
 
     @property
@@ -181,6 +187,17 @@ def iterate_over_iterable(T: Iterable):
         print(i)
 
 
+def flatten(items, seqtypes=(list, tuple, set, dict)):
+    try:
+        for i, x in enumerate(items):
+            while isinstance(x, seqtypes):
+                items[i:i+1] = x
+                x = items[i]
+    except IndexError:
+        pass
+    return items
+
+
 def flattening_iterator(*args: Iterable[Any] | Any) -> Generator[Any, None, None]:
     for i in args:
         try:
@@ -222,15 +239,12 @@ def get_sequence_or_item(sequence: Sequence):
         return sequence
 
 
-def get_group(match : re.Match) -> Optional[str]:
+def get_group(match: re.Match) -> Optional[str]:
     return null_safe_chaining(match, "group", callable=True)
 
 
 def add_regex_boundaries(coll: Sequence[str]) -> str:
     return "|".join(coll)
-
-
-
 
 
 def not_singleton(T: Iterable):
@@ -244,7 +258,10 @@ def not_singleton(T: Iterable):
 
 
 def safe_next(iterator_or_gen: Iterator | Generator):
-    return next(iterator_or_gen, None)
+    try:
+        return next(iterator_or_gen, None)
+    except StopIteration:
+        pass
 
 
 def safe_next_chaining(iterator_or_gen, attr):
@@ -298,9 +315,7 @@ def combine(*iterables: Iterable, out_iter=tuple) -> Iterable:
     return flatten_iter(it.chain(iterables), out_iter=out_iter)
 
 
-
-
-def bool_return(thing, default=None):
+def bool_return(thing: T, default: T | None = None):
     return thing if thing else default
 
 
@@ -339,10 +354,11 @@ def null_safe_chaining(_object, attribute, default=None, callable: bool = False)
     except AttributeError:
         return default
 
-def null_safe_index(_iter : Sequence, _index : int):
+
+def null_safe_index(_iter: Sequence, _index: int):
     try:
         return _iter[_index]
-    
+
     except (TypeError, IndexError) as e:
         return None
 

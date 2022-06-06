@@ -127,3 +127,4 @@ bot_temp/
 textfile/
 *env*
 /bot_data_stuff
+profiler.py
