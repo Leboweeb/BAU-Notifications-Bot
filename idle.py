@@ -9,9 +9,11 @@ from functions import TelegramInterface, notification_message_builder
 from utilities.common import autocorrect, WebsiteMeta, IO_DATA_DIR, bool_return
 
 api_key, chat_id = WebsiteMeta.api_key, WebsiteMeta.public_context
+# set the bot to testing mode if the words true, True, T, yes, y, or yes, set to normal mode otherwise
 testing = dict.fromkeys(("true", "True", "T", "yes", "y", "Yes"), True).get(
     IO_DATA_DIR("settings.cfg").split("=")[1], False)
 chat_id = WebsiteMeta.testing_chat_context if testing else WebsiteMeta.public_context
+print(testing)
 bot = telebot.TeleBot(api_key)
 
 intro = """

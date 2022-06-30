@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime
 import difflib
 from functools import reduce
+import html
 import itertools as it
 from dataclasses import dataclass, field
 import json
@@ -479,6 +480,13 @@ def courses_wrapper() -> List[dict]:
 def mappings_wrapper() -> dict[str, str]:
     return json.loads(IO_DATA_DIR("mappings.json"))
 
+def mapping_init():
+    IO_DATA_DIR("mappings.json", "w", "")
+    data = courses_wrapper()
+    data = (i for i in data)
+    mappings = {item["shortname"]: html.unescape(
+        item["fullname"]).split("-")[0] for item in data}
+    IO_DATA_DIR("mappings.json", "w", json.dumps(mappings, indent=4))
 
 def insert_into_dict(dictionary, index, pair) -> dict:
     keys, values = list(dictionary.keys()), list(dictionary.values())

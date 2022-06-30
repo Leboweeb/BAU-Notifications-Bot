@@ -1,5 +1,4 @@
 from collections import Counter
-import html
 from typing import List
 from utilities.async_functions import all_notifications, re
 from utilities.common import Announcement, courses_wrapper, IO_DATA_DIR , gen_exec, is_similar, clean_iter, json, notifications_wrapper
@@ -64,13 +63,6 @@ def update_links(Announcements: List[Announcement]):
         links_dict, indent=4)) if links_dict else None
 
 
-def mapping_init():
-    IO_DATA_DIR("mappings.json", "w", "")
-    data = courses_wrapper()
-    data = (i for i in data)
-    mappings = {item["shortname"]: html.unescape(
-        item["fullname"]).split("-")[0] for item in data}
-    IO_DATA_DIR("mappings.json", "w", json.dumps(mappings, indent=4))
 
 
 def notification_cleanup(res: List[Announcement]) -> List[Announcement]:

@@ -6,7 +6,7 @@ THIS MODULE IS NOT ALLOWED TO BE IMPORTED BY OTHER MODULES !!!!!!!!
 import asyncio
 from typing import Union
 import httpx
-from utilities.common import add_cookies_to_header, IO_DATA_DIR, my_format, css_selector, url_encode, soup_bowl, json, WebsiteMeta
+from utilities.common import add_cookies_to_header, IO_DATA_DIR, my_format, css_selector, url_encode, soup_bowl, json, WebsiteMeta, mapping_init
 
 LOGIN_URL = r"https://icas.bau.edu.lb:8443/cas/login?service=https%3A%2F%2Fmoodle.bau.edu.lb%2Flogin%2Findex.php"
 SECURE_URL = r"https://moodle.bau.edu.lb/my/"
@@ -158,3 +158,5 @@ async def main():
         assert type(i) != dict
 
 asyncio.run(main())
+# set up the data needed on data fetch
+mapping_init()
