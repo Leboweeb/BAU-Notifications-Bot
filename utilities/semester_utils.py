@@ -5,11 +5,11 @@ from functools import partial
 from io import BufferedReader
 import re
 from typing import Optional
-from utilities.common import DATA_DIR, IO_DATA_DIR, flattening_iterator, null_safe_chaining
+from utilities.common import DATA_DIR, IO_DATA_DIR, flattening_iterator, null_safe_chaining, to_natural_str
 import requests
 import PyPDF2
 
-from utilities.time_parsing_lib import DAYS, MONTHS, to_natural_str
+from utilities.time_parsing_lib import DAYS, MONTHS
 
 
 def abbreviate(x): return x[:3]

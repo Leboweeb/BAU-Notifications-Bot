@@ -3,7 +3,7 @@ from typing import Iterable
 from functools import reduce
 from utilities.common import Announcement, bool_return, checker_factory, clean_iter, flatten_iter, json, autocorrect, string_builder, IO_DATA_DIR, to_natural_str
 from utilities.input_filters import notification_cleanup, ALL_NOTIFICATIONS
-from utilities.time_parsing_lib import now
+from utilities.time_parsing_lib import now, datetime
 
 
 def notification_message_builder(
@@ -13,6 +13,7 @@ def notification_message_builder(
                for attr in attrs]
     prefixes = [i.capitalize() for i in attrs]
     strings.append(to_natural_str(notification.date_created))
+    strings[-2] += f"  ({( (datetime.strptime(strings[-2],'%A %B %d %Y')) - now ).days }days left)"
     prefixes.append("Time created")
     if custom_message:
         strings[2] = custom_message
@@ -107,7 +108,7 @@ class TelegramInterface:
         is_relatively_recent = checker_factory(0, 7)
         return filter(is_relatively_recent, self.notifications)
 
-    def search_notifications(self, query) -> str | None:
+    def search_notifications(self, query:str) -> str | None:
         def _search_announcement(announcement: Announcement, query: str):
             msg = announcement.message.lower()
             highlighted_string = search_case_insensitive(

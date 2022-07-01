@@ -19,6 +19,7 @@ DATA_DIR = pathlib.Path(f"./{DATA_DIR_PATH}").resolve()
 
 T = TypeVar("T")
 
+now = datetime.now()
 FORMAT = "%(levelname)s %(asctime)s - %(message)s"
 logging.basicConfig(
     filename=fr"{DATA_DIR}/logs.log",
@@ -86,19 +87,6 @@ class Announcement:
     def __post_init__(self):
         self.message = self.message.split(
             "---------------------------------------------------------------------")[1]
-
-    def __str__(self) -> str:
-        attrs = ("title", "subject", "message", "deadline")
-        strings = [getattr(self, attr)
-                   for attr in attrs]
-        prefixes = [i.capitalize() for i in attrs]
-        strings.append(to_natural_str(self.date_created))
-        prefixes.append("Time created")
-        return f"""
-        ---------------------------------------
-            {string_builder(strings,prefixes)}
-        ---------------------------------------
-        """
 
     # This ensures that object attribute setting is done in a maintainable way
     @property

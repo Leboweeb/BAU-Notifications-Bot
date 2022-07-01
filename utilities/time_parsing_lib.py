@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import re
 from typing import Callable, Generator, Optional, Sequence
-from utilities.common import UnexpectedBehaviourError, add_regex_boundaries, get_group, to_natural_str
+from utilities.common import UnexpectedBehaviourError, add_regex_boundaries, get_group, now
 
 
 datetime_dict = dict[str, int]
@@ -19,7 +19,6 @@ def datetime_to_dict(dt: datetime) -> datetime_dict: return {
     "year": dt.year, "month": dt.month, "day": dt.day}
 
 
-now = datetime.now()
 now = now.replace(**datetime_to_dict(now), tzinfo=None)
 
 DAYS, MONTHS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), ("January",

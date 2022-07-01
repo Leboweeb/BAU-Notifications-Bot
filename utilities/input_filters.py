@@ -1,7 +1,7 @@
 from collections import Counter
 from typing import List
 from utilities.async_functions import all_notifications, re
-from utilities.common import Announcement, courses_wrapper, IO_DATA_DIR , gen_exec, is_similar, clean_iter, json, notifications_wrapper
+from utilities.common import Announcement, IO_DATA_DIR , gen_exec, is_similar, clean_iter, json, notifications_wrapper
 
 
 ALL_NOTIFICATIONS = all_notifications(notifications_wrapper())
@@ -77,8 +77,8 @@ def notification_cleanup(res: List[Announcement]) -> List[Announcement]:
 def hilight(res: List[Announcement]) -> List[Announcement]:
     def _important_notification(Notification: Announcement):
         if re.findall(
-            r"\blab\b|\btest\b|\bquiz\b|\bfinal\b|\bgrades\b|\bgrade\b|\bmakeup\b|\bincomplete exam\b|\bproject\b|\bsession\b",
-            Notification.message.lower(),
+            r"\blab\b|\btest\b|\bquiz\b|\bfinal\b|\bgrades\b|\bgrade\b|\bmakeup\b|\bincomplete exam\b|\bproject\b|\bexam\b|\bmidterm\b",
+            Notification.title.lower(),
                 flags=re.MULTILINE):
             return True
     important_objects = list(filter(_important_notification, res))

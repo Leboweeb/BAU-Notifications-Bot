@@ -13,7 +13,6 @@ api_key, chat_id = WebsiteMeta.api_key, WebsiteMeta.public_context
 testing = dict.fromkeys(("true", "True", "T", "yes", "y", "Yes"), True).get(
     IO_DATA_DIR("settings.cfg").split("=")[1], False)
 chat_id = WebsiteMeta.testing_chat_context if testing else WebsiteMeta.public_context
-print(testing)
 bot = telebot.TeleBot(api_key)
 
 intro = """
@@ -138,9 +137,7 @@ class BotCommands:
         Returns notifications representing exams, quizzes, exam deadlines, labs, etc.. in no particular order.
         If you want to filter notifications by type, call the search function with an argument.
         """
-        gen = (notification_message_builder(i)
-               for i in interface.notifications)
-        send_message("\n".join(gen))
+        send_message("\n".join(map(notification_message_builder, interface.notifications)))
 
     @staticmethod
     def commands(message):
@@ -191,7 +188,7 @@ class BotCommands:
         """
 
         res = bool_return(interface.filter_by_type_worker(query), "")
-        final_res = "\n".join(map(str, res))
+        final_res = "\n".join(map(notification_message_builder, res))
         wrap_result(
             final_res, "No notifications matching this filter were found")
 
@@ -211,7 +208,7 @@ c = BotCommands()
 
 @bot.message_handler(content_types=["text"])
 def language_interpreter(message: telebot.types.Message):
-    def get_fn(f: str): return getattr(c, f)
+    def get_fn(f: str): return getattr(c, c.aliases[f])
     thing = message.text.lower()
     function, *_ = thing.split(" ")
     argument = " ".join(_)
@@ -221,7 +218,7 @@ def language_interpreter(message: telebot.types.Message):
     if any(i == thing for i in phrases) or "use this" in thing:
         send_message(intro)
     elif in_aliases():
-        c.last_command = get_fn(c.aliases[function])
+        c.last_command = get_fn(function)
         c.last_command(argument)
     elif function in responses and c.interactive:
         if function in responses[2:]:
