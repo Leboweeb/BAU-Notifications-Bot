@@ -122,6 +122,14 @@ class SanityChecks(unittest.TestCase):
         begin_test(self, cases=cases,
                    assertions=assertions)
 
+    def test_date_getter(self):
+        test_thing = datetime(2022, 3, 19)
+        cases = ("Saturday March 19", "Sat march 19",
+                 "sat March 19", "sat mar 19", "Saturday March 19 2022")
+        for case in cases:
+            self.assertTrue(test_thing in datefinder.find_dates(
+                case), "Should be equal to the Saturday datetime object")
+
     def test_multiple_type_subjects(self):
         def generate_subjects(title: str) -> set[Optional[str]]:
             non_exam_types, exam_types = (
@@ -139,45 +147,6 @@ class SanityChecks(unittest.TestCase):
 
 
 t = TelegramInterface()
-
-
-class BotCommandsSuite(unittest.TestCase):
-
-    def test_date_getter(self):
-        test_thing = datetime(2022, 3, 19)
-        cases = ("Saturday March 19", "Sat march 19",
-                 "sat March 19", "sat mar 19", "Saturday March 19 2022")
-        for case in cases:
-            self.assertTrue(test_thing in datefinder.find_dates(
-                case), "Should be equal to the Saturday datetime object")
-
-    def test_search_notifications(self):
-        begin_test(self, ("exam", "lab"), (True,) * 3, lambda c: bool(t.search_notifications(c)))
-
-    def test_filter(self):
-        begin_test(self, ("exam", "lab","MATH", "math",
-                   "prog", "PROG"), (True,) * 8, lambda c: bool(t.filter_by_type_worker(c)))
-        self.assertEqual(t.filter_by_type_worker("junk"),
-                         None, "Should not fail with junk words")
-
-    def test_name_wrapper(self):
-        t = TelegramInterface()
-        # FIRST_NOTIFICATION = t.notifications[0]
-        cases = ("math 283",
-                 "electric", "comp 225", "blah blah")
-        assertions = ("Differential Equations",
-                      "electric circuits 1", "COMP225", "blah blah")
-
-        messages = ("Should handle course codes",
-                    "Should handle course names",
-                    "Should handle capitalized course names",
-                    "Should get last match if multiple courses collide",
-                    "Should not fail on junk names")
-        essential_tests = tuple(t.name_wrapper(i) for i in cases[:-1])
-        begin_test(self, essential_tests, assertions, messages=messages)
-        self.assertNotEqual(
-            messages, None, "Should show notifications for cases")
-        self.assertIsNone(t.filter_by_type_worker(cases[-1]))
 
 
 if __name__ == "__main__":

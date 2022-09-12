@@ -6,7 +6,7 @@ from typing import Callable, Iterable, Optional, TypeVar
 import telebot
 from concurrent.futures import ThreadPoolExecutor
 from functions import TelegramInterface, notification_message_builder
-from utilities.common import autocorrect, WebsiteMeta, IO_DATA_DIR, bool_return
+from utilities.common import autocorrect, WebsiteMeta, IO_DATA_DIR, bool_return, mapping_init
 
 api_key, chat_id = WebsiteMeta.api_key, WebsiteMeta.public_context
 # set the bot to testing mode if the words true, True, T, yes, y, or yes, set to normal mode otherwise
@@ -14,7 +14,7 @@ testing = dict.fromkeys(("true", "True", "T", "yes", "y", "Yes"), True).get(
     IO_DATA_DIR("settings.cfg").split("=")[1], False)
 chat_id = WebsiteMeta.testing_chat_context if testing else WebsiteMeta.public_context
 bot = telebot.TeleBot(api_key)
-
+mapping_init()
 intro = """
 Hello ! To start using me, simply write a command in plain text and I will do my best to correct it (if you misspell a word).
 
@@ -92,6 +92,16 @@ class BotCommands:
             BotCommands.aliases |= alias
 
     @staticmethod
+    def whatis(message):
+        """
+        Tells you what a subject code is if it is recognized.
+        For example, COMP210 is Programming II
+        """
+        subject = interface.name_wrapper(message)
+        send_message(
+            f"{message} is {subject}" if subject else "Subject not recognized")
+
+    @staticmethod
     def meeting_links(message):
         """
         A convenience function to send the zoom/teams meeting links of every subject in a text file.
@@ -137,7 +147,8 @@ class BotCommands:
         Returns notifications representing exams, quizzes, exam deadlines, labs, etc.. in no particular order.
         If you want to filter notifications by type, call the search function with an argument.
         """
-        send_message("\n".join(map(notification_message_builder, interface.notifications)))
+        send_message(
+            "\n".join(map(notification_message_builder, interface.notifications)))
 
     @staticmethod
     def commands(message):

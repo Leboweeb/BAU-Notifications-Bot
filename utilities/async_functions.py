@@ -144,11 +144,8 @@ async def prep_courses():
     courses = courses_wrapper()
 
     async def course_generator(T: List[dict[str:str]]):
-        def testing_predicate(
-            i): return 0 < i["progress"] < 100 or i["fullname"] == "Electricity and Magnetism"
         for i in T:
-            if testing_predicate(i):
-                yield Course(i["fullname"], i["viewurl"])
+            yield Course(i["fullname"], i["viewurl"])
     return {i async for i in course_generator(courses)}
 
 

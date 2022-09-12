@@ -13,7 +13,8 @@ def notification_message_builder(
                for attr in attrs]
     prefixes = [i.capitalize() for i in attrs]
     strings.append(to_natural_str(notification.date_created))
-    strings[-2] += f"  ({( (datetime.strptime(strings[-2],'%A %B %d %Y')) - now ).days }days left)"
+    if strings[-2]:
+        strings[-2] += f"  ({( (datetime.strptime(strings[-2],'%A %B %d %Y')) - now ).days }days left)"
     prefixes.append("Time created")
     if custom_message:
         strings[2] = custom_message
@@ -69,11 +70,10 @@ class TelegramInterface:
         notifications = json.dumps(notifications, indent=4)
         IO_DATA_DIR("links_and_meetings.json", "w", notifications)
 
-    def get_index_from_name(self, query):
+    def get_index_from_name(self, query: str):
         query = query.replace(" ", "").strip()
-        reference_tuple = self.course_mappings_dict.items()
         reference_tuple = tuple(
-            map(lambda tup: (tup[0].lower().split("-")[0], tup[1].lower()), reference_tuple))
+            map(lambda tup: (tup[0].lower().split("-")[0], tup[1].lower()), self.course_mappings_dict.items()))
         try:
             index = None
             if query == "":
@@ -97,7 +97,7 @@ class TelegramInterface:
         if index:
             return self.course_mappings_dict[tuple(self.course_mappings_dict.keys())[index]]
 
-    def name_wrapper(self, query):
+    def name_wrapper(self, query: str):
         query = query.lower()
         if query:
             index = self.get_index_from_name(query)
@@ -108,7 +108,7 @@ class TelegramInterface:
         is_relatively_recent = checker_factory(0, 7)
         return filter(is_relatively_recent, self.notifications)
 
-    def search_notifications(self, query:str) -> str | None:
+    def search_notifications(self, query: str) -> str | None:
         def _search_announcement(announcement: Announcement, query: str):
             msg = announcement.message.lower()
             highlighted_string = search_case_insensitive(
