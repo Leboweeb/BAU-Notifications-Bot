@@ -9,7 +9,7 @@ You wouldn't believe how bloated the university website is. Through special mean
 This bot is hosted on my laptop, so I actually need to launch the bot for it to respond to commands.
 > ⚠️ You can expect this bot to be available from 3PM-12AM.
 If you know another way to do this, please let me know.
-Otherwise, you can host your own instance of the bot and the personal version.
+Otherwise, you can host your own instance of the bot in the personal version.
 
 2 - How do I use this?
 
